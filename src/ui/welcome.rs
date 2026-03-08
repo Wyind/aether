@@ -59,7 +59,8 @@ pub fn draw_welcome(frame: &mut Frame, app: &mut App) {
     lines.push(Line::from(Span::styled(tagline, Style::default().fg(theme.accent_dim))));
 
     // Version
-    let version = format!("{:^width$}", "v0.1.0", width = area.width as usize);
+    let ver_str = include_str!("../../version.txt").trim();
+    let version = format!("{:^width$}", format!("v{}", ver_str), width = area.width as usize);
     lines.push(Line::from(Span::styled(version, Style::default().fg(theme.comment))));
 
     lines.push(Line::from(""));

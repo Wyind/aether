@@ -42,7 +42,8 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("Aether v0.1.0");
+    let version = include_str!("../version.txt").trim();
+    println!("Aether v{}", version);
     println!("A beautiful TUI text editor & IDE");
     println!("https://github.com/wyind/aether");
 }

@@ -31,7 +31,7 @@ pub fn draw_about(frame: &mut Frame, app: &mut App) {
 
     let mut lines = vec![
         Line::from(""),
-        Line::from(Span::styled("Aether IDE v0.1.0", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(format!("Aether IDE v{}", include_str!("../../version.txt").trim()), Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))),
         Line::from("A beautiful TUI text editor & IDE"),
         Line::from(""),
         Line::from(Span::styled("── Author ──", Style::default().fg(theme.accent_dim))),
