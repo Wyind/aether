@@ -135,7 +135,7 @@ impl Cursor {
         if self.col < self.scroll_col {
             self.scroll_col = self.col;
         }
-        if self.col >= self.scroll_col + viewport_width {
+        if viewport_width > 0 && self.col >= self.scroll_col + viewport_width {
             self.scroll_col = self.col - viewport_width + 1;
         }
     }

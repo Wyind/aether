@@ -73,8 +73,11 @@ pub fn draw_editor_pane(frame: &mut Frame, app: &mut App, area: Rect) {
         let line_num = scroll_row + i;
         if line_num < line_count {
             let line_text = doc.buffer.get_line(line_num);
+            
+            // Handle horizontal scroll slicing safely
             let display_text = if scroll_col < line_text.len() {
-                &line_text[scroll_col..]
+                let end = (scroll_col + viewport_width).min(line_text.len());
+                &line_text[scroll_col..end]
             } else {
                 ""
             };
