@@ -1,10 +1,15 @@
+use crate::ai::AiAssistant;
 use crate::config::Config;
 use crate::editor::document::Document;
-use crate::theme::Theme;
-use crate::ai::AiAssistant;
 use crate::plugin::PluginManager;
+use crate::theme::Theme;
+use std::borrow::Cow;
+use std::io::Read;
+use ureq;
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, MouseButton};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppScreen {
@@ -50,8 +55,11 @@ pub enum AgentCommand {
     Delete { path: String },
     Rename { old: String, new: String },
     List { path: String },
+    Grep { pattern: String, path: String },
+    Shell { command: String },
     Test { command: String },
     Commit { message: String },
+    WebFetch { url: String },
 }
 
 #[derive(Debug, Clone)]
@@ -114,31 +122,103 @@ impl CommandPaletteState {
         let commands = vec![
             ("Open File".to_string(), "Open a file from disk".to_string()),
             ("Save File".to_string(), "Save the current file".to_string()),
-            ("Save As".to_string(), "Save current file with a new name".to_string()),
+            (
+                "Save As".to_string(),
+                "Save current file with a new name".to_string(),
+            ),
             ("Close Tab".to_string(), "Close the current tab".to_string()),
-            ("New File".to_string(), "Create a new empty file".to_string()),
-            ("Toggle File Tree".to_string(), "Show/hide the file tree sidebar".to_string()),
-            ("Switch Theme".to_string(), "Cycle through available themes".to_string()),
-            ("Switch to Vim Mode".to_string(), "Use Vim keybindings".to_string()),
-            ("Switch to Nano Mode".to_string(), "Use Nano keybindings".to_string()),
-            ("Switch to Aether Mode".to_string(), "Use Aether keybindings".to_string()),
-            ("Toggle Line Numbers".to_string(), "Show/hide line numbers".to_string()),
-            ("Go to Line".to_string(), "Jump to a specific line number".to_string()),
-            ("Find & Replace".to_string(), "Search and replace text".to_string()),
-            ("Toggle Word Wrap".to_string(), "Enable/disable word wrapping".to_string()),
-            ("Ask AI (Complete)".to_string(), "Use local AI to complete the current code".to_string()),
-            ("Ask AI (Explain)".to_string(), "Use local AI to explain the current line/selection".to_string()),
-            ("Ask AI Assistant".to_string(), "Open sidebar and focus AI chat input".to_string()),
-            ("Toggle AI Sidebar".to_string(), "Show or hide the AI assistant panel".to_string()),
-            ("Git: Interactive Status".to_string(), "Open interactive Git status view".to_string()),
-            ("Git: Status".to_string(), "Show minimal git status".to_string()),
-            ("Git: Add All".to_string(), "Stage all file changes in cwd".to_string()),
-            ("Git: Commit".to_string(), "Commit staged changes with default message".to_string()),
-            ("Git: Push".to_string(), "Push commits to remote".to_string()),
-            ("GitHub: Login".to_string(), "Sign into GitHub CLI via browser".to_string()),
-            ("Toggle Lua Info".to_string(), "Show/hide last Lua key info".to_string()),
-            ("Toggle Tab Hints".to_string(), "Show/hide tab switching shortcuts".to_string()),
-            ("Open Controls".to_string(), "Show keyboard shortcuts for the current mode".to_string()),
+            (
+                "New File".to_string(),
+                "Create a new empty file".to_string(),
+            ),
+            (
+                "Toggle File Tree".to_string(),
+                "Show/hide the file tree sidebar".to_string(),
+            ),
+            (
+                "Switch Theme".to_string(),
+                "Cycle through available themes".to_string(),
+            ),
+            (
+                "Switch to Vim Mode".to_string(),
+                "Use Vim keybindings".to_string(),
+            ),
+            (
+                "Switch to Nano Mode".to_string(),
+                "Use Nano keybindings".to_string(),
+            ),
+            (
+                "Switch to Aether Mode".to_string(),
+                "Use Aether keybindings".to_string(),
+            ),
+            (
+                "Toggle Line Numbers".to_string(),
+                "Show/hide line numbers".to_string(),
+            ),
+            (
+                "Go to Line".to_string(),
+                "Jump to a specific line number".to_string(),
+            ),
+            (
+                "Find & Replace".to_string(),
+                "Search and replace text".to_string(),
+            ),
+            (
+                "Toggle Word Wrap".to_string(),
+                "Enable/disable word wrapping".to_string(),
+            ),
+            (
+                "Ask AI (Complete)".to_string(),
+                "Use local AI to complete the current code".to_string(),
+            ),
+            (
+                "Ask AI (Explain)".to_string(),
+                "Use local AI to explain the current line/selection".to_string(),
+            ),
+            (
+                "Ask AI Assistant".to_string(),
+                "Open sidebar and focus AI chat input".to_string(),
+            ),
+            (
+                "Toggle AI Sidebar".to_string(),
+                "Show or hide the AI assistant panel".to_string(),
+            ),
+            (
+                "Git: Interactive Status".to_string(),
+                "Open interactive Git status view".to_string(),
+            ),
+            (
+                "Git: Status".to_string(),
+                "Show minimal git status".to_string(),
+            ),
+            (
+                "Git: Add All".to_string(),
+                "Stage all file changes in cwd".to_string(),
+            ),
+            (
+                "Git: Commit".to_string(),
+                "Commit staged changes with default message".to_string(),
+            ),
+            (
+                "Git: Push".to_string(),
+                "Push commits to remote".to_string(),
+            ),
+            (
+                "GitHub: Login".to_string(),
+                "Sign into GitHub CLI via browser".to_string(),
+            ),
+            (
+                "Toggle Lua Info".to_string(),
+                "Show/hide last Lua key info".to_string(),
+            ),
+            (
+                "Toggle Tab Hints".to_string(),
+                "Show/hide tab switching shortcuts".to_string(),
+            ),
+            (
+                "Open Controls".to_string(),
+                "Show keyboard shortcuts for the current mode".to_string(),
+            ),
             ("Quit".to_string(), "Exit Aether".to_string()),
         ];
         let filtered = (0..commands.len()).collect();
@@ -151,16 +231,21 @@ impl CommandPaletteState {
     }
 
     pub fn update_filter(&mut self) {
-        use fuzzy_matcher::FuzzyMatcher;
         use fuzzy_matcher::skim::SkimMatcherV2;
+        use fuzzy_matcher::FuzzyMatcher;
 
         let matcher = SkimMatcherV2::default();
         if self.query.is_empty() {
             self.filtered = (0..self.commands.len()).collect();
         } else {
-            let mut scored: Vec<(usize, i64)> = self.commands.iter().enumerate()
+            let mut scored: Vec<(usize, i64)> = self
+                .commands
+                .iter()
+                .enumerate()
                 .filter_map(|(i, (name, _))| {
-                    matcher.fuzzy_match(name, &self.query).map(|score| (i, score))
+                    matcher
+                        .fuzzy_match(name, &self.query)
+                        .map(|score| (i, score))
                 })
                 .collect();
             scored.sort_by(|a, b| b.1.cmp(&a.1));
@@ -212,7 +297,9 @@ impl FilePickerState {
         self.selected = 0;
         self.scroll = 0;
 
-        let Ok(read_dir) = std::fs::read_dir(&self.current_dir) else { return };
+        let Ok(read_dir) = std::fs::read_dir(&self.current_dir) else {
+            return;
+        };
         let mut items: Vec<FilePickerEntry> = read_dir
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -224,12 +311,19 @@ impl FilePickerState {
                 let path = e.path().to_string_lossy().to_string();
                 let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
                 let size = e.metadata().map(|m| m.len()).unwrap_or(0);
-                FilePickerEntry { name, path, is_dir, size }
+                FilePickerEntry {
+                    name,
+                    path,
+                    is_dir,
+                    size,
+                }
             })
             .collect();
 
         items.sort_by(|a, b| {
-            b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
 
         self.entries = items;
@@ -241,7 +335,10 @@ impl FilePickerState {
             self.filtered_entries = (0..self.entries.len()).collect();
         } else {
             let query = self.filter_query.to_lowercase();
-            self.filtered_entries = self.entries.iter().enumerate()
+            self.filtered_entries = self
+                .entries
+                .iter()
+                .enumerate()
                 .filter(|(_, e)| e.name.to_lowercase().contains(&query))
                 .map(|(i, _)| i)
                 .collect();
@@ -375,7 +472,11 @@ impl App {
             file_picker_state: FilePickerState::new(),
             ai_assistant: AiAssistant::new(crate::ai::AiConfig {
                 enabled: config.ai_enabled,
-                backend: if config.ai_enabled { crate::ai::AiBackend::Ollama } else { crate::ai::AiBackend::None },
+                backend: if config.ai_enabled {
+                    crate::ai::AiBackend::Ollama
+                } else {
+                    crate::ai::AiBackend::None
+                },
                 model_name: config.ai_model.clone(),
                 endpoint: "http://localhost:11434".to_string(),
             }),
@@ -407,9 +508,12 @@ impl App {
             pending_ai_commands: Vec::new(),
             ai_completion: None,
             ai_completion_rx: None,
+            ai_input_buffer: String::new(),
             last_input_time: std::time::Instant::now(),
         };
-        app.plugin_manager.setup_api().expect("Failed to setup Lua API");
+        app.plugin_manager
+            .setup_api()
+            .expect("Failed to setup Lua API");
         let _ = app.plugin_manager.load_plugins();
         app.refresh_git_status();
         app.refresh_file_tree();
@@ -474,8 +578,10 @@ impl App {
     }
 
     pub fn save_current(&mut self) {
-        if self.documents.is_empty() { return; }
-        
+        if self.documents.is_empty() {
+            return;
+        }
+
         // Call Lua hook
         let ptr = self as *mut _;
         let _ = self.plugin_manager.run_hook("on_save", ptr);
@@ -499,7 +605,9 @@ impl App {
     }
 
     pub fn close_current_tab(&mut self) {
-        if self.documents.is_empty() { return; }
+        if self.documents.is_empty() {
+            return;
+        }
         self.documents.remove(self.active_tab);
         if self.active_tab > 0 && self.active_tab >= self.documents.len() {
             self.active_tab = self.documents.len() - 1;
@@ -606,11 +714,23 @@ impl App {
             KeyCode::BackTab | KeyCode::Up | KeyCode::Left => {
                 if state.step == 1 {
                     let len = Theme::all().len();
-                    state.selected_theme = if state.selected_theme == 0 { len - 1 } else { state.selected_theme - 1 };
+                    state.selected_theme = if state.selected_theme == 0 {
+                        len - 1
+                    } else {
+                        state.selected_theme - 1
+                    };
                 } else if state.step == 2 {
-                    state.selected_mode = if state.selected_mode == 0 { 3 } else { state.selected_mode - 1 };
+                    state.selected_mode = if state.selected_mode == 0 {
+                        3
+                    } else {
+                        state.selected_mode - 1
+                    };
                 } else if state.step == 3 {
-                    state.ai_model_choice = if state.ai_model_choice == 0 { 3 } else { state.ai_model_choice - 1 };
+                    state.ai_model_choice = if state.ai_model_choice == 0 {
+                        3
+                    } else {
+                        state.ai_model_choice - 1
+                    };
                 } else if state.step == 4 {
                     // Switch focus
                     state.options_focus = if state.options_focus == 0 { 1 } else { 0 };
@@ -671,36 +791,34 @@ impl App {
                     self.welcome_state.selected_option += 1;
                 }
             }
-            KeyCode::Enter => {
-                match self.welcome_state.selected_option {
-                    0 => self.new_file(),
-                    1 => self.open_file_picker(),
-                    2 => self.screen = AppScreen::Controls,
-                    3 => self.screen = AppScreen::About,
-                    4 => {
-                        self.screen = AppScreen::Setup;
-                        self.setup_state = SetupState::new();
-                        self.setup_state.username = self.config.username.clone();
-                    }
-                    5 => {
-                        if self.config.auto_update {
-                            self.screen = AppScreen::Updater;
-                            crate::updater::start_updater(self);
-                        } else {
-                            self.should_quit = true;
-                        }
-                    }
-                    6 => self.should_quit = true,
-                    n => {
-                        let offset = if self.config.auto_update { 7 } else { 6 };
-                        let idx = n.saturating_sub(offset);
-                        if idx < self.welcome_state.recent_files.len() {
-                            let path = self.welcome_state.recent_files[idx].clone();
-                            self.open_file(&path);
-                        }
+            KeyCode::Enter => match self.welcome_state.selected_option {
+                0 => self.new_file(),
+                1 => self.open_file_picker(),
+                2 => self.screen = AppScreen::Controls,
+                3 => self.screen = AppScreen::About,
+                4 => {
+                    self.screen = AppScreen::Setup;
+                    self.setup_state = SetupState::new();
+                    self.setup_state.username = self.config.username.clone();
+                }
+                5 => {
+                    if self.config.auto_update {
+                        self.screen = AppScreen::Updater;
+                        crate::updater::start_updater(self);
+                    } else {
+                        self.should_quit = true;
                     }
                 }
-            }
+                6 => self.should_quit = true,
+                n => {
+                    let offset = if self.config.auto_update { 7 } else { 6 };
+                    let idx = n.saturating_sub(offset);
+                    if idx < self.welcome_state.recent_files.len() {
+                        let path = self.welcome_state.recent_files[idx].clone();
+                        self.open_file(&path);
+                    }
+                }
+            },
             KeyCode::Char('u') | KeyCode::Char('U') => {
                 if self.config.auto_update {
                     self.screen = AppScreen::Updater;
@@ -728,7 +846,9 @@ impl App {
                 self.focus = AppFocus::Editor;
             }
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::ALT) || key.modifiers.contains(KeyModifiers::SHIFT) {
+                if key.modifiers.contains(KeyModifiers::ALT)
+                    || key.modifiers.contains(KeyModifiers::SHIFT)
+                {
                     if !self.pending_ai_commands.is_empty() {
                         self.execute_pending_commands();
                     }
@@ -764,10 +884,10 @@ impl App {
             content: String::new(),
         });
         self.ai_generating = true;
-        
+
         let (tx, rx) = std::sync::mpsc::channel();
         self.ai_rx = Some(rx);
-        
+
         self.ai_assistant.chat(self.ai_chat_history.clone(), tx);
     }
 
@@ -832,7 +952,8 @@ impl App {
                     content.push_str(lines.next().unwrap());
                     content.push('\n');
                 }
-                self.pending_ai_commands.push(AgentCommand::Create { path, content });
+                self.pending_ai_commands
+                    .push(AgentCommand::Create { path, content });
             } else if line.starts_with("@@APPEND ") {
                 let path = line.trim_start_matches("@@APPEND ").trim().to_string();
                 let mut content = String::new();
@@ -844,7 +965,8 @@ impl App {
                     content.push_str(lines.next().unwrap());
                     content.push('\n');
                 }
-                self.pending_ai_commands.push(AgentCommand::Append { path, content });
+                self.pending_ai_commands
+                    .push(AgentCommand::Append { path, content });
             } else if line.starts_with("@@READ ") {
                 let path = line.trim_start_matches("@@READ ").trim().to_string();
                 self.pending_ai_commands.push(AgentCommand::Read { path });
@@ -852,27 +974,57 @@ impl App {
                 let path = line.trim_start_matches("@@DELETE ").trim().to_string();
                 self.pending_ai_commands.push(AgentCommand::Delete { path });
             } else if line.starts_with("@@RENAME ") {
-                let parts: Vec<&str> = line.trim_start_matches("@@RENAME ").split_whitespace().collect();
+                let parts: Vec<&str> = line
+                    .trim_start_matches("@@RENAME ")
+                    .split_whitespace()
+                    .collect();
                 if parts.len() == 2 {
-                    self.pending_ai_commands.push(AgentCommand::Rename { 
-                        old: parts[0].to_string(), 
-                        new: parts[1].to_string() 
+                    self.pending_ai_commands.push(AgentCommand::Rename {
+                        old: parts[0].to_string(),
+                        new: parts[1].to_string(),
                     });
                 }
             } else if line.starts_with("@@LIST") {
                 let path = line.trim_start_matches("@@LIST").trim().to_string();
                 self.pending_ai_commands.push(AgentCommand::List { path });
+            } else if line.starts_with("@@GREP ") {
+                let args = line.trim_start_matches("@@GREP ").trim();
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let (pattern, path) = if parts.len() == 2 {
+                    (parts[0].to_string(), parts[1].to_string())
+                } else {
+                    (args.to_string(), ".".to_string())
+                };
+                self.pending_ai_commands
+                    .push(AgentCommand::Grep { pattern, path });
+            } else if line.starts_with("@@SHELL ") {
+                let command = line.trim_start_matches("@@SHELL ").trim().to_string();
+                self.pending_ai_commands
+                    .push(AgentCommand::Shell { command });
             } else if line.starts_with("@@TEST") {
                 let command = line.trim_start_matches("@@TEST").trim().to_string();
-                self.pending_ai_commands.push(AgentCommand::Test { command });
+                self.pending_ai_commands
+                    .push(AgentCommand::Test { command });
+            } else if line.starts_with("@@WEBFETCH ") {
+                let url = line.trim_start_matches("@@WEBFETCH ").trim().to_string();
+                self.pending_ai_commands
+                    .push(AgentCommand::WebFetch { url });
             } else if line.starts_with("@@COMMIT ") {
-                let message = line.trim_start_matches("@@COMMIT ").trim().trim_matches('"').to_string();
-                self.pending_ai_commands.push(AgentCommand::Commit { message });
+                let message = line
+                    .trim_start_matches("@@COMMIT ")
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
+                self.pending_ai_commands
+                    .push(AgentCommand::Commit { message });
             }
         }
 
         if !self.pending_ai_commands.is_empty() {
-            self.set_status(&format!("AI Agent: {} actions pending approval", self.pending_ai_commands.len()));
+            self.set_status(&format!(
+                "AI Agent: {} actions pending approval",
+                self.pending_ai_commands.len()
+            ));
         }
     }
 
@@ -904,7 +1056,10 @@ impl App {
                 }
                 AgentCommand::Read { path } => {
                     if let Ok(content) = fs::read_to_string(&path) {
-                        self.send_ai_message(&format!("Content of {}:\n```\n{}\n```", path, content));
+                        self.send_ai_message(&format!(
+                            "Content of {}:\n```\n{}\n```",
+                            path, content
+                        ));
                         self.set_status(&format!("AI Agent: Read {}", path));
                     }
                 }
@@ -927,15 +1082,126 @@ impl App {
                         for entry in entries.flatten() {
                             let file_name = entry.file_name().to_string_lossy().to_string();
                             let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                            list.push_str(&format!("{}{}\n", file_name, if is_dir { "/" } else { "" }));
+                            list.push_str(&format!(
+                                "{}{}\n",
+                                file_name,
+                                if is_dir { "/" } else { "" }
+                            ));
                         }
                         self.send_ai_message(&format!("Files in {}:\n{}", target, list));
                         self.set_status(&format!("AI Agent: Listed {}", target));
                     }
                 }
+                AgentCommand::Grep { pattern, path } => {
+                    let target = if path.is_empty() { "." } else { &path };
+                    let output = if cfg!(windows) {
+                        Command::new("cmd")
+                            .arg("/c")
+                            .arg(format!("findstr /s /n \"{}\" *", pattern))
+                            .output()
+                    } else {
+                        Command::new("sh")
+                            .arg("-c")
+                            .arg(format!("grep -rn \"{}\" {}", pattern, target))
+                            .output()
+                    };
+
+                    match output {
+                        Ok(out) => {
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            if stdout.is_empty() {
+                                self.send_ai_message(&format!(
+                                    "No matches found for '{}' in {}",
+                                    pattern, target
+                                ));
+                            } else {
+                                self.send_ai_message(&format!(
+                                    "Search results for '{}':\n```\n{}\n```",
+                                    pattern, stdout
+                                ));
+                            }
+                            self.set_status(&format!("AI Agent: Grepped for {}", pattern));
+                        }
+                        Err(e) => {
+                            self.send_ai_message(&format!("AI Agent Error: Grep failed: {}", e));
+                        }
+                    }
+                }
+                AgentCommand::Shell { command } => {
+                    let output = if cfg!(windows) {
+                        Command::new("cmd").arg("/c").arg(&command).output()
+                    } else {
+                        Command::new("sh").arg("-c").arg(&command).output()
+                    };
+
+                    match output {
+                        Ok(out) => {
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            let stderr = String::from_utf8_lossy(&out.stderr);
+                            let status = if out.status.success() { "✓" } else { "✗" };
+                            let stdout_str = if stdout.is_empty() {
+                                Cow::Borrowed("(no stdout)")
+                            } else {
+                                stdout
+                            };
+                            self.send_ai_message(&format!(
+                                "$ {}\n{}\n{}\n[Exit code: {}]",
+                                command,
+                                stdout_str,
+                                if !stderr.is_empty() {
+                                    format!("STDERR: {}", stderr)
+                                } else {
+                                    String::new()
+                                },
+                                out.status.code().unwrap_or(-1)
+                            ));
+                            self.set_status(&format!(
+                                "AI Agent: Shell command {} (exit {})",
+                                status,
+                                out.status.code().unwrap_or(-1)
+                            ));
+                        }
+                        Err(e) => {
+                            self.send_ai_message(&format!(
+                                "AI Agent Error: Shell command failed: {}",
+                                e
+                            ));
+                        }
+                    }
+                }
+                AgentCommand::WebFetch { url } => {
+                    use std::io::Read;
+                    match ureq::get(&url).call() {
+                        Ok(resp) => {
+                            let mut body = String::new();
+                            let mut reader = resp.into_reader();
+                            let _ = reader.read_to_string(&mut body);
+                            let preview = if body.len() > 2000 {
+                                format!("{}...\n(truncated)", &body[..2000])
+                            } else {
+                                body
+                            };
+                            self.send_ai_message(&format!(
+                                "Fetched from {}\n```\n{}\n```",
+                                url, preview
+                            ));
+                            self.set_status(&format!("AI Agent: Fetched {}", url));
+                        }
+                        Err(e) => {
+                            self.send_ai_message(&format!(
+                                "AI Agent Error: Web fetch failed: {}",
+                                e
+                            ));
+                        }
+                    }
+                }
                 AgentCommand::Test { command } => {
-                    let cmd_to_run = if command.is_empty() { "cargo test" } else { &command };
-                    
+                    let cmd_to_run = if command.is_empty() {
+                        "cargo test"
+                    } else {
+                        &command
+                    };
+
                     let output = if cfg!(windows) {
                         Command::new("cmd").arg("/c").arg(cmd_to_run).output()
                     } else {
@@ -944,23 +1210,40 @@ impl App {
 
                     match output {
                         Ok(out) => {
-                            let status = if out.status.success() { "PASSED" } else { "FAILED" };
+                            let status = if out.status.success() {
+                                "PASSED"
+                            } else {
+                                "FAILED"
+                            };
                             let stdout = String::from_utf8_lossy(&out.stdout);
                             let stderr = String::from_utf8_lossy(&out.stderr);
-                            self.send_ai_message(&format!("Test Result ({}):\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr));
+                            self.send_ai_message(&format!(
+                                "Test Result ({}):\nSTDOUT:\n{}\nSTDERR:\n{}",
+                                status, stdout, stderr
+                            ));
                             self.set_status(&format!("AI Agent: Test {}", status));
                         }
                         Err(e) => {
-                            self.send_ai_message(&format!("AI Agent Error: Failed to run test: {}", e));
+                            self.send_ai_message(&format!(
+                                "AI Agent Error: Failed to run test: {}",
+                                e
+                            ));
                         }
                     }
                 }
                 AgentCommand::Commit { message } => {
                     let _ = Command::new("git").arg("add").arg(".").status();
-                    if let Ok(status) = Command::new("git").arg("commit").arg("-m").arg(&message).status() {
+                    if let Ok(status) = Command::new("git")
+                        .arg("commit")
+                        .arg("-m")
+                        .arg(&message)
+                        .status()
+                    {
                         if status.success() {
                             self.set_status(&format!("AI Agent: Committed: \"{}\"", message));
-                            self.send_ai_message(&format!("AI Agent: Successfully committed changes."));
+                            self.send_ai_message(&format!(
+                                "AI Agent: Successfully committed changes."
+                            ));
                         }
                     }
                 }
@@ -989,7 +1272,11 @@ impl App {
     }
 
     pub fn restart_app(&mut self) {
-        let binary_name = if cfg!(windows) { "aether.exe" } else { "aether" };
+        let binary_name = if cfg!(windows) {
+            "aether.exe"
+        } else {
+            "aether"
+        };
         let target_path = if cfg!(windows) {
             dirs::data_local_dir().map(|d| d.join("Aether").join("bin").join(binary_name))
         } else if cfg!(target_os = "macos") {
@@ -1000,7 +1287,7 @@ impl App {
 
         if let Some(path) = target_path {
             let mut cmd = std::process::Command::new(path);
-            
+
             // Reopen current file if possible
             if !self.documents.is_empty() {
                 if let Some(file_path) = &self.documents[self.active_tab].file_path {
@@ -1025,7 +1312,11 @@ impl App {
                 }
             }
             KeyCode::Down => {
-                let max = if self.git_focus == 0 { self.git_unstaged.len() } else { self.git_staged.len() };
+                let max = if self.git_focus == 0 {
+                    self.git_unstaged.len()
+                } else {
+                    self.git_staged.len()
+                };
                 if self.git_selected + 1 < max {
                     self.git_selected += 1;
                 }
@@ -1048,12 +1339,19 @@ impl App {
                 if self.git_focus == 0 {
                     if let Some(file_row) = self.git_unstaged.get(self.git_selected) {
                         let file = &file_row[3..];
-                        let _ = std::process::Command::new("git").arg("add").arg(file).status();
+                        let _ = std::process::Command::new("git")
+                            .arg("add")
+                            .arg(file)
+                            .status();
                     }
                 } else {
                     if let Some(file_row) = self.git_staged.get(self.git_selected) {
                         let file = &file_row[3..];
-                        let _ = std::process::Command::new("git").arg("restore").arg("--staged").arg(file).status();
+                        let _ = std::process::Command::new("git")
+                            .arg("restore")
+                            .arg("--staged")
+                            .arg(file)
+                            .status();
                     }
                 }
                 self.refresh_git_status();
@@ -1132,25 +1430,26 @@ impl App {
             let logo_height = 8;
             let content_height = logo_height + 15;
             let start_y = center_y.saturating_sub(content_height / 2);
-            
+
             let options_start = start_y + 13;
             let options_count = if self.config.auto_update { 6 } else { 5 };
             let options_end = options_start + options_count;
-            
+
             if row >= options_start && row < options_end {
                 self.welcome_state.selected_option = (row - options_start) as usize;
                 // Treat mouse click as Enter
                 self.handle_welcome_input(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
             }
-            
+
             // Recent files
             if !self.welcome_state.recent_files.is_empty() {
                 let options_count = if self.config.auto_update { 6 } else { 5 };
                 let recent_start = start_y + 21;
                 let recent_end = recent_start + self.welcome_state.recent_files.len().min(5) as u16;
-                
+
                 if row >= recent_start && row < recent_end {
-                    self.welcome_state.selected_option = options_count as usize + (row - recent_start) as usize;
+                    self.welcome_state.selected_option =
+                        options_count as usize + (row - recent_start) as usize;
                     self.handle_welcome_input(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
                 }
             }
@@ -1160,7 +1459,9 @@ impl App {
     pub fn handle_editor_input(&mut self, key: KeyEvent) {
         if self.save_prompt_active {
             match key.code {
-                KeyCode::Esc => { self.save_prompt_active = false; }
+                KeyCode::Esc => {
+                    self.save_prompt_active = false;
+                }
                 KeyCode::Enter => {
                     if !self.save_prompt_query.is_empty() {
                         let path = self.save_prompt_query.clone();
@@ -1174,8 +1475,12 @@ impl App {
                         self.refresh_file_tree();
                     }
                 }
-                KeyCode::Char(c) => { self.save_prompt_query.push(c); }
-                KeyCode::Backspace => { self.save_prompt_query.pop(); }
+                KeyCode::Char(c) => {
+                    self.save_prompt_query.push(c);
+                }
+                KeyCode::Backspace => {
+                    self.save_prompt_query.pop();
+                }
                 _ => {}
             }
             return;
@@ -1258,7 +1563,10 @@ impl App {
         }
 
         // Alt+x for Palette in Emacs mode
-        if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('x') && self.edit_mode == EditMode::Emacs {
+        if key.modifiers.contains(KeyModifiers::ALT)
+            && key.code == KeyCode::Char('x')
+            && self.edit_mode == EditMode::Emacs
+        {
             self.command_palette = CommandPaletteState::new();
             self.screen = AppScreen::CommandPalette;
             return;
@@ -1284,7 +1592,9 @@ impl App {
         // Search mode input
         if self.searching {
             match key.code {
-                KeyCode::Esc => { self.searching = false; }
+                KeyCode::Esc => {
+                    self.searching = false;
+                }
                 KeyCode::Enter => {
                     // Find next occurrence
                     if !self.documents.is_empty() && !self.search_query.is_empty() {
@@ -1292,8 +1602,12 @@ impl App {
                         doc.find_next(&self.search_query);
                     }
                 }
-                KeyCode::Char(c) => { self.search_query.push(c); }
-                KeyCode::Backspace => { self.search_query.pop(); }
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                }
+                KeyCode::Backspace => {
+                    self.search_query.pop();
+                }
                 _ => {}
             }
             return;
@@ -1310,7 +1624,9 @@ impl App {
 
     pub fn handle_file_tree_input(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc => { self.focus = AppFocus::Editor; }
+            KeyCode::Esc => {
+                self.focus = AppFocus::Editor;
+            }
             KeyCode::Up => {
                 if self.file_tree_selected > 0 {
                     self.file_tree_selected -= 1;
@@ -1322,7 +1638,9 @@ impl App {
                 }
             }
             KeyCode::Enter | KeyCode::Right => {
-                if self.file_tree_entries.is_empty() { return; }
+                if self.file_tree_entries.is_empty() {
+                    return;
+                }
                 let entry = self.file_tree_entries[self.file_tree_selected].clone();
                 if entry.is_dir {
                     if self.expanded_dirs.contains(&entry.path) {
@@ -1337,7 +1655,9 @@ impl App {
                 }
             }
             KeyCode::Left => {
-                if self.file_tree_entries.is_empty() { return; }
+                if self.file_tree_entries.is_empty() {
+                    return;
+                }
                 let entry = self.file_tree_entries[self.file_tree_selected].clone();
                 if entry.is_dir && self.expanded_dirs.contains(&entry.path) {
                     self.expanded_dirs.remove(&entry.path);
@@ -1347,7 +1667,7 @@ impl App {
             _ => {
                 // Ignore other keys while focused on tree, or handle global
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Temporarily defocus to utilize global shorts 
+                    // Temporarily defocus to utilize global shorts
                     self.focus = AppFocus::Editor;
                     self.handle_editor_input(key);
                     self.focus = AppFocus::FileTree;
@@ -1365,12 +1685,16 @@ impl App {
             return;
         }
 
-        if self.documents.is_empty() { return; }
+        if self.documents.is_empty() {
+            return;
+        }
 
         match self.vim_mode {
             VimSubMode::Normal => {
                 match key.code {
-                    KeyCode::Char('i') => { self.vim_mode = VimSubMode::Insert; }
+                    KeyCode::Char('i') => {
+                        self.vim_mode = VimSubMode::Insert;
+                    }
                     KeyCode::Char('a') => {
                         let doc = &mut self.documents[self.active_tab];
                         doc.cursor.move_right(&doc.buffer);
@@ -1449,73 +1773,71 @@ impl App {
                     _ => {}
                 }
             }
-            VimSubMode::Insert => {
-                match key.code {
-                    KeyCode::Esc => { self.vim_mode = VimSubMode::Normal; }
-                    KeyCode::Char(c) => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.insert_char(c);
-                    }
-                    KeyCode::Enter => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.insert_newline();
-                    }
-                    KeyCode::Backspace => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.backspace();
-                    }
-                    KeyCode::Delete => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.delete_char();
-                    }
-                    KeyCode::Left => {
-                        self.documents[self.active_tab].cursor.move_left();
-                    }
-                    KeyCode::Right => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.cursor.move_right(&doc.buffer);
-                    }
-                    KeyCode::Up => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.cursor.move_up();
-                    }
-                    KeyCode::Down => {
-                        let doc = &mut self.documents[self.active_tab];
-                        doc.cursor.move_down(&doc.buffer);
-                    }
-                    KeyCode::Tab => {
-                        let doc = &mut self.documents[self.active_tab];
-                        for _ in 0..4 {
-                            doc.insert_char(' ');
-                        }
-                    }
-                    _ => {}
+            VimSubMode::Insert => match key.code {
+                KeyCode::Esc => {
+                    self.vim_mode = VimSubMode::Normal;
                 }
-            }
-            VimSubMode::Command => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.vim_mode = VimSubMode::Normal;
-                        self.vim_command_buffer.clear();
-                    }
-                    KeyCode::Enter => {
-                        let cmd = self.vim_command_buffer.clone();
-                        self.vim_mode = VimSubMode::Normal;
-                        self.execute_vim_command(&cmd);
-                        self.vim_command_buffer.clear();
-                    }
-                    KeyCode::Char(c) => {
-                        self.vim_command_buffer.push(c);
-                    }
-                    KeyCode::Backspace => {
-                        self.vim_command_buffer.pop();
-                        if self.vim_command_buffer.is_empty() {
-                            self.vim_mode = VimSubMode::Normal;
-                        }
-                    }
-                    _ => {}
+                KeyCode::Char(c) => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.insert_char(c);
                 }
-            }
+                KeyCode::Enter => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.insert_newline();
+                }
+                KeyCode::Backspace => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.backspace();
+                }
+                KeyCode::Delete => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.delete_char();
+                }
+                KeyCode::Left => {
+                    self.documents[self.active_tab].cursor.move_left();
+                }
+                KeyCode::Right => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.cursor.move_right(&doc.buffer);
+                }
+                KeyCode::Up => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.cursor.move_up();
+                }
+                KeyCode::Down => {
+                    let doc = &mut self.documents[self.active_tab];
+                    doc.cursor.move_down(&doc.buffer);
+                }
+                KeyCode::Tab => {
+                    let doc = &mut self.documents[self.active_tab];
+                    for _ in 0..4 {
+                        doc.insert_char(' ');
+                    }
+                }
+                _ => {}
+            },
+            VimSubMode::Command => match key.code {
+                KeyCode::Esc => {
+                    self.vim_mode = VimSubMode::Normal;
+                    self.vim_command_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    let cmd = self.vim_command_buffer.clone();
+                    self.vim_mode = VimSubMode::Normal;
+                    self.execute_vim_command(&cmd);
+                    self.vim_command_buffer.clear();
+                }
+                KeyCode::Char(c) => {
+                    self.vim_command_buffer.push(c);
+                }
+                KeyCode::Backspace => {
+                    self.vim_command_buffer.pop();
+                    if self.vim_command_buffer.is_empty() {
+                        self.vim_mode = VimSubMode::Normal;
+                    }
+                }
+                _ => {}
+            },
         }
     }
 
@@ -1529,7 +1851,9 @@ impl App {
                         self.should_quit = true;
                     }
                 } else {
-                    self.set_status("Unsaved changes! Use :q! to force quit or :wq to save and quit");
+                    self.set_status(
+                        "Unsaved changes! Use :q! to force quit or :wq to save and quit",
+                    );
                 }
             }
             "q!" => {
@@ -1550,7 +1874,8 @@ impl App {
                     self.open_file(filename.trim());
                 } else if let Some(filename) = cmd.strip_prefix("w ") {
                     if !self.documents.is_empty() {
-                        self.documents[self.active_tab].file_path = Some(filename.trim().to_string());
+                        self.documents[self.active_tab].file_path =
+                            Some(filename.trim().to_string());
                         self.save_current();
                     }
                 } else {
@@ -1569,7 +1894,9 @@ impl App {
             return;
         }
 
-        if self.documents.is_empty() { return; }
+        if self.documents.is_empty() {
+            return;
+        }
         let doc = &mut self.documents[self.active_tab];
 
         match key.code {
@@ -1588,13 +1915,19 @@ impl App {
             KeyCode::Home => doc.cursor.col = 0,
             KeyCode::End => doc.cursor.move_to_end_of_line(&doc.buffer),
             KeyCode::PageUp => {
-                for _ in 0..20 { doc.cursor.move_up(); }
+                for _ in 0..20 {
+                    doc.cursor.move_up();
+                }
             }
             KeyCode::PageDown => {
-                for _ in 0..20 { doc.cursor.move_down(&doc.buffer); }
+                for _ in 0..20 {
+                    doc.cursor.move_down(&doc.buffer);
+                }
             }
             KeyCode::Tab => {
-                for _ in 0..4 { doc.insert_char(' '); }
+                for _ in 0..4 {
+                    doc.insert_char(' ');
+                }
             }
             _ => {}
         }
@@ -1615,7 +1948,9 @@ impl App {
         //   Alt+hjkl for fast navigation (vim-style without modes)
         //   Alt+d delete line, Alt+y copy line, Alt+p paste
         //   Smart auto-indent, bracket matching
-        if self.documents.is_empty() { return; }
+        if self.documents.is_empty() {
+            return;
+        }
 
         if key.modifiers.contains(KeyModifiers::ALT) {
             let doc = &mut self.documents[self.active_tab];
@@ -1667,10 +2002,20 @@ impl App {
             KeyCode::Down => doc.cursor.move_down(&doc.buffer),
             KeyCode::Home => doc.cursor.col = 0,
             KeyCode::End => doc.cursor.move_to_end_of_line(&doc.buffer),
-            KeyCode::PageUp => { for _ in 0..20 { doc.cursor.move_up(); } }
-            KeyCode::PageDown => { for _ in 0..20 { doc.cursor.move_down(&doc.buffer); } }
+            KeyCode::PageUp => {
+                for _ in 0..20 {
+                    doc.cursor.move_up();
+                }
+            }
+            KeyCode::PageDown => {
+                for _ in 0..20 {
+                    doc.cursor.move_down(&doc.buffer);
+                }
+            }
             KeyCode::Tab => {
-                for _ in 0..4 { doc.insert_char(' '); }
+                for _ in 0..4 {
+                    doc.insert_char(' ');
+                }
             }
             _ => {}
         }
@@ -1685,7 +2030,9 @@ impl App {
             return;
         }
 
-        if self.documents.is_empty() { return; }
+        if self.documents.is_empty() {
+            return;
+        }
         let doc = &mut self.documents[self.active_tab];
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -1729,7 +2076,9 @@ impl App {
             KeyCode::Backspace => doc.backspace(),
             KeyCode::Delete => doc.delete_char(),
             KeyCode::Tab => {
-                for _ in 0..4 { doc.insert_char(' '); }
+                for _ in 0..4 {
+                    doc.insert_char(' ');
+                }
             }
             KeyCode::Up => doc.cursor.move_up(),
             KeyCode::Down => doc.cursor.move_down(&doc.buffer),
@@ -1755,7 +2104,11 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                if let Some(&idx) = self.command_palette.filtered.get(self.command_palette.selected) {
+                if let Some(&idx) = self
+                    .command_palette
+                    .filtered
+                    .get(self.command_palette.selected)
+                {
                     self.execute_palette_command(idx);
                 }
                 self.screen = AppScreen::Editor;
@@ -1776,13 +2129,15 @@ impl App {
         match idx {
             0 => self.open_file_picker(),
             1 => self.save_current(),
-            2 => { 
+            2 => {
                 self.save_prompt_active = true;
                 self.save_prompt_query.clear();
             }
             3 => self.close_current_tab(),
             4 => self.new_file(),
-            5 => { self.show_file_tree = !self.show_file_tree; }
+            5 => {
+                self.show_file_tree = !self.show_file_tree;
+            }
             6 => self.cycle_theme(),
             7 => {
                 self.edit_mode = EditMode::Vim;
@@ -1803,10 +2158,17 @@ impl App {
                 let _ = self.config.save();
                 self.set_status("Switched to Aether mode");
             }
-            10 => { self.show_line_numbers = !self.show_line_numbers; }
+            10 => {
+                self.show_line_numbers = !self.show_line_numbers;
+            }
             11 => { /* Go to line - simplified */ }
-            12 => { self.searching = true; self.search_query.clear(); }
-            13 => { self.word_wrap = !self.word_wrap; }
+            12 => {
+                self.searching = true;
+                self.search_query.clear();
+            }
+            13 => {
+                self.word_wrap = !self.word_wrap;
+            }
             14 => {
                 if !self.documents.is_empty() {
                     let line_content = {
@@ -1815,7 +2177,10 @@ impl App {
                     };
                     self.show_ai_sidebar = true;
                     self.focus = AppFocus::AiPrompt;
-                    self.send_ai_message(&format!("Complete this code:\n```\n{}\n```", line_content));
+                    self.send_ai_message(&format!(
+                        "Complete this code:\n```\n{}\n```",
+                        line_content
+                    ));
                 }
             }
             15 => {
@@ -1826,7 +2191,10 @@ impl App {
                     };
                     self.show_ai_sidebar = true;
                     self.focus = AppFocus::AiPrompt;
-                    self.send_ai_message(&format!("Explain this code:\n```\n{}\n```", line_content));
+                    self.send_ai_message(&format!(
+                        "Explain this code:\n```\n{}\n```",
+                        line_content
+                    ));
                 }
             }
             16 => {
@@ -1849,7 +2217,10 @@ impl App {
                 self.set_status(&format!("Git: {}", status.replace('\n', " ")));
             }
             20 => {
-                let _ = std::process::Command::new("git").arg("add").arg(".").status();
+                let _ = std::process::Command::new("git")
+                    .arg("add")
+                    .arg(".")
+                    .status();
                 self.set_status("Git: Added all changes");
             }
             21 => {
@@ -1877,16 +2248,34 @@ impl App {
                 self.show_lua_info = !self.show_lua_info;
                 self.config.show_lua_info = self.show_lua_info;
                 let _ = self.config.save();
-                self.set_status(&format!("Lua info display: {}", if self.show_lua_info { "Enabled" } else { "Disabled" }));
+                self.set_status(&format!(
+                    "Lua info display: {}",
+                    if self.show_lua_info {
+                        "Enabled"
+                    } else {
+                        "Disabled"
+                    }
+                ));
             }
             25 => {
                 self.show_tab_switch_hint = !self.show_tab_switch_hint;
                 self.config.show_tab_switch_hint = self.show_tab_switch_hint;
                 let _ = self.config.save();
-                self.set_status(&format!("Tab switch hints: {}", if self.show_tab_switch_hint { "Enabled" } else { "Disabled" }));
+                self.set_status(&format!(
+                    "Tab switch hints: {}",
+                    if self.show_tab_switch_hint {
+                        "Enabled"
+                    } else {
+                        "Disabled"
+                    }
+                ));
             }
-            26 => { self.screen = AppScreen::Controls; }
-            27 => { self.should_quit = true; }
+            26 => {
+                self.screen = AppScreen::Controls;
+            }
+            27 => {
+                self.should_quit = true;
+            }
             _ => {}
         }
     }
@@ -1915,7 +2304,9 @@ impl App {
                 }
             }
             KeyCode::Down => {
-                if self.file_picker_state.selected + 1 < self.file_picker_state.filtered_entries.len() {
+                if self.file_picker_state.selected + 1
+                    < self.file_picker_state.filtered_entries.len()
+                {
                     self.file_picker_state.selected += 1;
                 }
             }
@@ -2024,7 +2415,9 @@ impl App {
         if let Ok(output) = output {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if line.len() < 4 { continue; }
+                if line.len() < 4 {
+                    continue;
+                }
                 let staged_code = &line[0..1];
                 let unstaged_code = &line[1..2];
                 let file = &line[3..];
@@ -2033,49 +2426,57 @@ impl App {
                     self.git_staged.push(format!("{} {}", staged_code, file));
                 }
                 if unstaged_code != " " || staged_code == "?" {
-                    let code = if staged_code == "?" { "??" } else { unstaged_code };
+                    let code = if staged_code == "?" {
+                        "??"
+                    } else {
+                        unstaged_code
+                    };
                     self.git_unstaged.push(format!("{} {}", code, file));
                 }
             }
         }
     }
-fn build_file_tree(path: &str, depth: usize, max_depth: usize) -> Vec<FileTreeEntry> {
-    let mut entries = Vec::new();
-    if depth > max_depth { return entries; }
+    fn build_file_tree(path: &str, depth: usize, max_depth: usize) -> Vec<FileTreeEntry> {
+        let mut entries = Vec::new();
+        if depth > max_depth {
+            return entries;
+        }
 
-    let Ok(read_dir) = std::fs::read_dir(path) else { return entries };
-    let mut items: Vec<_> = read_dir
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            !name.starts_with('.') && name != "target" && name != "node_modules"
-        })
-        .collect();
+        let Ok(read_dir) = std::fs::read_dir(path) else {
+            return entries;
+        };
+        let mut items: Vec<_> = read_dir
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                !name.starts_with('.') && name != "target" && name != "node_modules"
+            })
+            .collect();
 
-    items.sort_by(|a, b| {
-        let a_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let b_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        b_dir.cmp(&a_dir).then(a.file_name().cmp(&b.file_name()))
-    });
-
-    for item in items {
-        let name = item.file_name().to_string_lossy().to_string();
-        let item_path = item.path().to_string_lossy().to_string();
-        let is_dir = item.file_type().map(|t| t.is_dir()).unwrap_or(false);
-
-        entries.push(FileTreeEntry {
-            name: name.clone(),
-            path: item_path.clone(),
-            is_dir,
-            depth,
-            expanded: depth == 0,
+        items.sort_by(|a, b| {
+            let a_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let b_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            b_dir.cmp(&a_dir).then(a.file_name().cmp(&b.file_name()))
         });
 
-        if is_dir && depth < max_depth {
-            entries.extend(Self::build_file_tree(&item_path, depth + 1, max_depth));
-        }
-    }
+        for item in items {
+            let name = item.file_name().to_string_lossy().to_string();
+            let item_path = item.path().to_string_lossy().to_string();
+            let is_dir = item.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
-    entries
-}
+            entries.push(FileTreeEntry {
+                name: name.clone(),
+                path: item_path.clone(),
+                is_dir,
+                depth,
+                expanded: depth == 0,
+            });
+
+            if is_dir && depth < max_depth {
+                entries.extend(Self::build_file_tree(&item_path, depth + 1, max_depth));
+            }
+        }
+
+        entries
+    }
 }
