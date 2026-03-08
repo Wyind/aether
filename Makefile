@@ -30,13 +30,15 @@ else ifeq ($(shell uname),Darwin)
 	@mkdir -p $(HOME)/Applications/Aether.app/Contents/MacOS
 	@mkdir -p $(HOME)/Applications/Aether.app/Contents/Resources
 	@cp target/release/aether $(HOME)/Applications/Aether.app/Contents/MacOS/aether
-	@cp "aether logos/aether_icon_256.png" $(HOME)/Applications/Aether.app/Contents/Resources/aether.png
+	@cp "assets/icons/aether_icon_256.png" $(HOME)/Applications/Aether.app/Contents/Resources/aether.png
 	@cp assets/Info.plist $(HOME)/Applications/Aether.app/Contents/Info.plist
 	@echo "✅ Aether.app created in ~/Applications"
 else
 	@echo "Installing Linux Desktop Entry..."
 	@mkdir -p $(HOME)/.local/share/icons/hicolor/256x256/apps
-	@cp "aether logos/aether_icon_256.png" $(HOME)/.local/share/icons/hicolor/256x256/apps/aether.png
+	@cp "assets/icons/aether_icon_256.png" $(HOME)/.local/share/icons/hicolor/256x256/apps/aether.png
+	@mkdir -p $(HOME)/.local/share/icons
+	@cp "assets/icons/aether_icon_256.png" $(HOME)/.local/share/icons/aether.png
 	@mkdir -p $(HOME)/.local/share/applications
 	@cp assets/aether.desktop $(HOME)/.local/share/applications/aether.desktop
 	@chmod +x $(HOME)/.local/share/applications/aether.desktop
@@ -55,6 +57,7 @@ else ifeq ($(shell uname),Darwin)
 else
 	@rm -f $(HOME)/.local/share/applications/aether.desktop
 	@rm -f $(HOME)/.local/share/icons/hicolor/256x256/apps/aether.png
+	@rm -f $(HOME)/.local/share/icons/aether.png
 endif
 	@echo "✅ Aether uninstalled"
 
@@ -68,8 +71,8 @@ run:
 
 # Run with args
 run-file:
-	cargo run -- $(FILE)
+	cargo run $(FILE)
 
 # Run setup
 run-setup:
-	cargo run -- --setup
+	cargo run --setup

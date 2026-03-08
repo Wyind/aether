@@ -242,7 +242,7 @@ pub fn draw_setup(frame: &mut Frame, app: &mut App) {
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  Use ↑↓ to switch. Press Enter to toggle the highlighted option.",
+                "  Use ↑↓ to switch. Press Space to toggle, Enter to finish.",
                 Style::default().fg(comment),
             )));
             lines.push(Line::from(""));

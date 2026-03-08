@@ -561,12 +561,8 @@ impl App {
                 } else if state.step == 3 {
                     state.ai_model_choice = (state.ai_model_choice + 1) % 4;
                 } else if state.step == 4 {
-                    // Toggle the currently focused option
-                    if state.options_focus == 0 {
-                        state.enable_auto_update = !state.enable_auto_update;
-                    } else {
-                        state.enable_mouse = !state.enable_mouse;
-                    }
+                    // Switch focus
+                    state.options_focus = (state.options_focus + 1) % 2;
                 }
             }
             KeyCode::BackTab | KeyCode::Up | KeyCode::Left => {
@@ -580,6 +576,16 @@ impl App {
                 } else if state.step == 4 {
                     // Switch focus
                     state.options_focus = if state.options_focus == 0 { 1 } else { 0 };
+                }
+            }
+            KeyCode::Char(' ') => {
+                if state.step == 4 {
+                    // Toggle the currently focused option
+                    if state.options_focus == 0 {
+                        state.enable_auto_update = !state.enable_auto_update;
+                    } else {
+                        state.enable_mouse = !state.enable_mouse;
+                    }
                 }
             }
             KeyCode::Char(c) => {
