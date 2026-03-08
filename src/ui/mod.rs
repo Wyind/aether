@@ -11,6 +11,7 @@ pub mod git;
 pub mod git_diff;
 pub mod git_commit;
 pub mod ai_sidebar;
+pub mod controls;
 
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -35,6 +36,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         AppScreen::GitStatus => git::draw_git_status(frame, app),
         AppScreen::GitDiff => git_diff::draw_git_diff(frame, app),
         AppScreen::GitCommit => git_commit::draw_git_commit(frame, app),
+        AppScreen::Controls => controls::draw_controls(frame, app),
     }
 }
 

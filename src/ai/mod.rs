@@ -181,15 +181,34 @@ impl AiAssistant {
         std::thread::spawn(move || {
             match config.backend {
                 AiBackend::Ollama => {
+                    let mut messages_json: Vec<serde_json::Value> = Vec::new();
+                    
+                    // Add system prompt
+                    messages_json.push(serde_json::json!({
+                        "role": "system",
+                        "content": "You are Aether AI, a powerful coding assistant. You can create and modify files. \
+                                   To create or overwrite a file, use the following format:\n\
+                                   @@CREATE path/to/file.ext\n\
+                                   [file content]\n\
+                                   @@\n\n\
+                                   To append to a file, use:\n\
+                                   @@APPEND path/to/file.ext\n\
+                                   [content to append]\n\
+                                   @@\n\n\
+                                   Be concise and professional. Use markdown for regular chat conversation."
+                    }));
+
+                    for m in messages {
+                        messages_json.push(serde_json::json!({
+                            "role": m.role,
+                            "content": m.content
+                        }));
+                    }
+
                     let url = format!("{}/api/chat", config.endpoint);
                     let body = serde_json::json!({
                         "model": config.model_name,
-                        "messages": messages.iter().map(|m| {
-                            serde_json::json!({
-                                "role": m.role,
-                                "content": m.content
-                            })
-                        }).collect::<Vec<_>>(),
+                        "messages": messages_json,
                         "stream": true
                     });
 

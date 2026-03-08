@@ -77,6 +77,7 @@ pub fn draw_welcome(frame: &mut Frame, app: &mut App) {
     let mut options = vec![
         ("n", "New File", "Create a new empty file"),
         ("o", "Open File", "Browse and open a file"),
+        ("c", "Controls", "Show keyboard shortcuts and help"),
         ("a", "About", "Credits & Built by Wyind"),
         ("s", "Settings", "Configure Aether"),
     ];

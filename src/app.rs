@@ -17,6 +17,7 @@ pub enum AppScreen {
     GitStatus,
     GitDiff,
     GitCommit,
+    Controls,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +116,8 @@ impl CommandPaletteState {
             ("Toggle Word Wrap".to_string(), "Enable/disable word wrapping".to_string()),
             ("Ask AI (Complete)".to_string(), "Use local AI to complete the current code".to_string()),
             ("Ask AI (Explain)".to_string(), "Use local AI to explain the current line/selection".to_string()),
+            ("Ask AI Assistant".to_string(), "Open sidebar and focus AI chat input".to_string()),
+            ("Toggle AI Sidebar".to_string(), "Show or hide the AI assistant panel".to_string()),
             ("Git: Interactive Status".to_string(), "Open interactive Git status view".to_string()),
             ("Git: Status".to_string(), "Show minimal git status".to_string()),
             ("Git: Add All".to_string(), "Stage all file changes in cwd".to_string()),
@@ -123,6 +126,7 @@ impl CommandPaletteState {
             ("GitHub: Login".to_string(), "Sign into GitHub CLI via browser".to_string()),
             ("Toggle Lua Info".to_string(), "Show/hide last Lua key info".to_string()),
             ("Toggle Tab Hints".to_string(), "Show/hide tab switching shortcuts".to_string()),
+            ("Open Controls".to_string(), "Show keyboard shortcuts for the current mode".to_string()),
             ("Quit".to_string(), "Exit Aether".to_string()),
         ];
         let filtered = (0..commands.len()).collect();
@@ -632,6 +636,9 @@ impl App {
             KeyCode::Char('o') | KeyCode::Char('O') => {
                 self.open_file_picker();
             }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.screen = AppScreen::Controls;
+            }
             KeyCode::Up | KeyCode::Left => {
                 if self.welcome_state.selected_option > 0 {
                     self.welcome_state.selected_option -= 1;
@@ -647,13 +654,14 @@ impl App {
                 match self.welcome_state.selected_option {
                     0 => self.new_file(),
                     1 => self.open_file_picker(),
-                    2 => self.screen = AppScreen::About,
-                    3 => {
+                    2 => self.screen = AppScreen::Controls,
+                    3 => self.screen = AppScreen::About,
+                    4 => {
                         self.screen = AppScreen::Setup;
                         self.setup_state = SetupState::new();
                         self.setup_state.username = self.config.username.clone();
                     }
-                    4 => {
+                    5 => {
                         if self.config.auto_update {
                             self.screen = AppScreen::Updater;
                             crate::updater::start_updater(self);
@@ -661,9 +669,9 @@ impl App {
                             self.should_quit = true;
                         }
                     }
-                    5 => self.should_quit = true,
+                    6 => self.should_quit = true,
                     n => {
-                        let offset = if self.config.auto_update { 6 } else { 5 };
+                        let offset = if self.config.auto_update { 7 } else { 6 };
                         let idx = n.saturating_sub(offset);
                         if idx < self.welcome_state.recent_files.len() {
                             let path = self.welcome_state.recent_files[idx].clone();
@@ -696,6 +704,9 @@ impl App {
     pub fn handle_ai_input(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
+                if self.show_ai_sidebar {
+                    self.show_ai_sidebar = false;
+                }
                 self.focus = AppFocus::Editor;
             }
             KeyCode::Enter => {
@@ -747,9 +758,13 @@ impl App {
                     crate::ai::AiResponse::Full(text) => {
                         if let Some(msg) = self.ai_chat_history.last_mut() {
                             if msg.role == "assistant" {
-                                msg.content = text;
+                                msg.content = text.clone();
                             }
                         }
+                        
+                        // Parse agent commands
+                        self.process_ai_agent_commands(&text);
+                        
                         self.ai_generating = false;
                         should_clear = true;
                     }
@@ -767,6 +782,59 @@ impl App {
         }
         if should_clear {
             self.ai_rx = None;
+        }
+    }
+
+    fn process_ai_agent_commands(&mut self, text: &str) {
+        use std::fs;
+        use std::path::Path;
+
+        // Simple tag-based parser
+        let mut lines = text.lines();
+        while let Some(line) = lines.next() {
+            if line.starts_with("@@CREATE ") {
+                let path_str = line.trim_start_matches("@@CREATE ").trim();
+                let mut content = String::new();
+                for content_line in lines.by_ref() {
+                    if content_line.starts_with("@@") {
+                        break;
+                    }
+                    content.push_str(content_line);
+                    content.push('\n');
+                }
+                
+                let path = Path::new(path_str);
+                if let Some(parent) = path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if fs::write(path, content).is_ok() {
+                    self.set_status(&format!("AI Agent: Created {}", path_str));
+                    self.refresh_file_tree();
+                }
+            } else if line.starts_with("@@APPEND ") {
+                let path_str = line.trim_start_matches("@@APPEND ").trim();
+                let mut content = String::new();
+                for content_line in lines.by_ref() {
+                    if content_line.starts_with("@@") {
+                        break;
+                    }
+                    content.push_str(content_line);
+                    content.push('\n');
+                }
+                
+                if let Ok(mut existing) = fs::read_to_string(path_str) {
+                    existing.push_str(&content);
+                    if fs::write(path_str, existing).is_ok() {
+                        self.set_status(&format!("AI Agent: Updated {}", path_str));
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn handle_controls_input(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::Esc || key.code == KeyCode::Enter {
+            self.screen = AppScreen::Welcome;
         }
     }
 
@@ -1596,9 +1664,16 @@ impl App {
                 }
             }
             16 => {
-                self.screen = AppScreen::GitStatus;
+                self.show_ai_sidebar = true;
+                self.focus = AppFocus::AiPrompt;
             }
             17 => {
+                self.show_ai_sidebar = !self.show_ai_sidebar;
+            }
+            18 => {
+                self.screen = AppScreen::GitStatus;
+            }
+            19 => {
                 let status = std::process::Command::new("git")
                     .arg("status")
                     .arg("--short")
@@ -1607,11 +1682,11 @@ impl App {
                     .unwrap_or_else(|_| "Git error".to_string());
                 self.set_status(&format!("Git: {}", status.replace('\n', " ")));
             }
-            18 => {
+            20 => {
                 let _ = std::process::Command::new("git").arg("add").arg(".").status();
                 self.set_status("Git: Added all changes");
             }
-            19 => {
+            21 => {
                 let _ = std::process::Command::new("git")
                     .arg("commit")
                     .arg("-m")
@@ -1619,11 +1694,11 @@ impl App {
                     .status();
                 self.set_status("Git: Committed changes");
             }
-            20 => {
+            22 => {
                 let _ = std::process::Command::new("git").arg("push").status();
                 self.set_status("Git: Pushed commits to remote");
             }
-            21 => {
+            23 => {
                 // Uses GitHub CLI to authenticate through web browser
                 let _ = std::process::Command::new("gh")
                     .arg("auth")
@@ -1632,20 +1707,20 @@ impl App {
                     .spawn();
                 self.set_status("GitHub: Login process initiated");
             }
-            22 => {
+            24 => {
                 self.show_lua_info = !self.show_lua_info;
                 self.config.show_lua_info = self.show_lua_info;
                 let _ = self.config.save();
                 self.set_status(&format!("Lua info display: {}", if self.show_lua_info { "Enabled" } else { "Disabled" }));
             }
-            23 => {
+            25 => {
                 self.show_tab_switch_hint = !self.show_tab_switch_hint;
                 self.config.show_tab_switch_hint = self.show_tab_switch_hint;
                 let _ = self.config.save();
                 self.set_status(&format!("Tab switch hints: {}", if self.show_tab_switch_hint { "Enabled" } else { "Disabled" }));
             }
-            // Add Emacs Mode toggle command if needed, but usually done via setup/menu
-            24 => { self.should_quit = true; }
+            26 => { self.screen = AppScreen::Controls; }
+            27 => { self.should_quit = true; }
             _ => {}
         }
     }
