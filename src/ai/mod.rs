@@ -137,6 +137,7 @@ impl AiAssistant {
     }
 
     /// Generate a completion for the given context
+    #[allow(dead_code)]
     pub fn complete(&self, context: &str) -> Option<String> {
         if !self.is_available() {
             return None;
@@ -163,6 +164,7 @@ impl AiAssistant {
     }
 
     /// Explain the selected code
+    #[allow(dead_code)]
     pub fn explain(&self, code: &str) -> Option<String> {
         self.complete(&format!("Please explain the following code concisely:\n\n{}", code))
     }
