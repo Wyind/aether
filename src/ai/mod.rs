@@ -197,7 +197,8 @@ impl AiAssistant {
                                    @@TEST [optional command like 'cargo test' or 'make']\n\
                                    @@COMMIT \"commit message\"\n\n\
                                    When asked to modify code, prefer showing the change using @@CREATE or @@APPEND if it's small. \
-                                   Always be concise. Use markdown for chatting. You have full permission to act within the project directory."
+                                   Always be concise. Use markdown for chatting. \
+                                   IMPORTANT: Your file operations (CREATE, DELETE, etc.) are held for user approval in the sidebar."
                     }));
 
                     for m in messages {

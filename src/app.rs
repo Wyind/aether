@@ -42,6 +42,18 @@ pub enum VimSubMode {
     Command,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentCommand {
+    Create { path: String, content: String },
+    Append { path: String, content: String },
+    Read { path: String },
+    Delete { path: String },
+    Rename { old: String, new: String },
+    List { path: String },
+    Test { command: String },
+    Commit { message: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct SetupState {
     pub step: usize,
@@ -311,6 +323,7 @@ pub struct App {
     pub ai_input_buffer: String,
     pub ai_generating: bool,
     pub ai_rx: Option<std::sync::mpsc::Receiver<crate::ai::AiResponse>>,
+    pub pending_ai_commands: Vec<AgentCommand>,
 }
 
 #[derive(Debug, Clone)]
@@ -389,6 +402,7 @@ impl App {
             ai_input_buffer: String::new(),
             ai_generating: false,
             ai_rx: None,
+            pending_ai_commands: Vec::new(),
         };
         app.plugin_manager.setup_api().expect("Failed to setup Lua API");
         let _ = app.plugin_manager.load_plugins();
@@ -706,16 +720,23 @@ impl App {
     pub fn handle_ai_input(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
-                if self.show_ai_sidebar {
-                    self.show_ai_sidebar = false;
-                }
                 self.focus = AppFocus::Editor;
             }
             KeyCode::Enter => {
-                if !self.ai_input_buffer.is_empty() && !self.ai_generating {
+                if key.modifiers.contains(KeyModifiers::ALT) || key.modifiers.contains(KeyModifiers::SHIFT) {
+                    if !self.pending_ai_commands.is_empty() {
+                        self.execute_pending_commands();
+                    }
+                } else if !self.ai_input_buffer.is_empty() && !self.ai_generating {
                     let prompt = self.ai_input_buffer.clone();
                     self.ai_input_buffer.clear();
                     self.send_ai_message(&prompt);
+                }
+            }
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+A: Approve all as well
+                if !self.pending_ai_commands.is_empty() {
+                    self.execute_pending_commands();
                 }
             }
             KeyCode::Char(c) => {
@@ -792,116 +813,150 @@ impl App {
     }
 
     fn process_ai_agent_commands(&mut self, text: &str) {
-        use std::fs;
-        use std::path::Path;
-        use std::process::Command;
-
         let mut lines = text.lines().peekable();
         while let Some(line) = lines.next() {
             let line = line.trim();
             if line.starts_with("@@CREATE ") {
-                let path_str = line.trim_start_matches("@@CREATE ").trim();
+                let path = line.trim_start_matches("@@CREATE ").trim().to_string();
                 let mut content = String::new();
                 while let Some(content_line) = lines.peek() {
                     if content_line.starts_with("@@") {
-                        let _ = lines.next(); // Consume closing @@
+                        let _ = lines.next();
                         break;
                     }
                     content.push_str(lines.next().unwrap());
                     content.push('\n');
                 }
-                
-                let path = Path::new(path_str);
-                if let Some(parent) = path.parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-                if fs::write(path, content).is_ok() {
-                    self.set_status(&format!("AI Agent: Created {}", path_str));
-                    self.refresh_file_tree();
-                }
+                self.pending_ai_commands.push(AgentCommand::Create { path, content });
             } else if line.starts_with("@@APPEND ") {
-                let path_str = line.trim_start_matches("@@APPEND ").trim();
+                let path = line.trim_start_matches("@@APPEND ").trim().to_string();
                 let mut content = String::new();
                 while let Some(content_line) = lines.peek() {
                     if content_line.starts_with("@@") {
-                        let _ = lines.next(); // Consume closing @@
+                        let _ = lines.next();
                         break;
                     }
                     content.push_str(lines.next().unwrap());
                     content.push('\n');
                 }
-                
-                if let Ok(mut existing) = fs::read_to_string(path_str) {
-                    existing.push_str(&content);
-                    if fs::write(path_str, existing).is_ok() {
-                        self.set_status(&format!("AI Agent: Updated {}", path_str));
-                    }
-                }
+                self.pending_ai_commands.push(AgentCommand::Append { path, content });
             } else if line.starts_with("@@READ ") {
-                let path_str = line.trim_start_matches("@@READ ").trim();
-                if let Ok(content) = fs::read_to_string(path_str) {
-                    self.send_ai_message(&format!("Content of {}:\n```\n{}\n```", path_str, content));
-                    self.set_status(&format!("AI Agent: Read {}", path_str));
-                } else {
-                    self.send_ai_message(&format!("AI Agent Error: Could not read {}", path_str));
-                }
+                let path = line.trim_start_matches("@@READ ").trim().to_string();
+                self.pending_ai_commands.push(AgentCommand::Read { path });
             } else if line.starts_with("@@DELETE ") {
-                let path_str = line.trim_start_matches("@@DELETE ").trim();
-                if fs::remove_file(path_str).is_ok() {
-                    self.set_status(&format!("AI Agent: Deleted {}", path_str));
-                    self.refresh_file_tree();
-                }
+                let path = line.trim_start_matches("@@DELETE ").trim().to_string();
+                self.pending_ai_commands.push(AgentCommand::Delete { path });
             } else if line.starts_with("@@RENAME ") {
                 let parts: Vec<&str> = line.trim_start_matches("@@RENAME ").split_whitespace().collect();
                 if parts.len() == 2 {
-                    if fs::rename(parts[0], parts[1]).is_ok() {
-                        self.set_status(&format!("AI Agent: Renamed {} to {}", parts[0], parts[1]));
+                    self.pending_ai_commands.push(AgentCommand::Rename { 
+                        old: parts[0].to_string(), 
+                        new: parts[1].to_string() 
+                    });
+                }
+            } else if line.starts_with("@@LIST") {
+                let path = line.trim_start_matches("@@LIST").trim().to_string();
+                self.pending_ai_commands.push(AgentCommand::List { path });
+            } else if line.starts_with("@@TEST") {
+                let command = line.trim_start_matches("@@TEST").trim().to_string();
+                self.pending_ai_commands.push(AgentCommand::Test { command });
+            } else if line.starts_with("@@COMMIT ") {
+                let message = line.trim_start_matches("@@COMMIT ").trim().trim_matches('"').to_string();
+                self.pending_ai_commands.push(AgentCommand::Commit { message });
+            }
+        }
+
+        if !self.pending_ai_commands.is_empty() {
+            self.set_status(&format!("AI Agent: {} actions pending approval", self.pending_ai_commands.len()));
+        }
+    }
+
+    pub fn execute_pending_commands(&mut self) {
+        use std::fs;
+        use std::path::Path;
+        use std::process::Command;
+
+        let commands = std::mem::take(&mut self.pending_ai_commands);
+        for cmd in commands {
+            match cmd {
+                AgentCommand::Create { path, content } => {
+                    let p = Path::new(&path);
+                    if let Some(parent) = p.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    if fs::write(p, content).is_ok() {
+                        self.set_status(&format!("AI Agent: Created {}", path));
                         self.refresh_file_tree();
                     }
                 }
-            } else if line.starts_with("@@LIST") {
-                let path_str = line.trim_start_matches("@@LIST").trim();
-                let target = if path_str.is_empty() { "." } else { path_str };
-                if let Ok(entries) = fs::read_dir(target) {
-                    let mut list = String::new();
-                    for entry in entries.flatten() {
-                        let file_name = entry.file_name().to_string_lossy().to_string();
-                        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                        list.push_str(&format!("{}{}\n", file_name, if is_dir { "/" } else { "" }));
+                AgentCommand::Append { path, content } => {
+                    if let Ok(mut existing) = fs::read_to_string(&path) {
+                        existing.push_str(&content);
+                        if fs::write(&path, existing).is_ok() {
+                            self.set_status(&format!("AI Agent: Updated {}", path));
+                        }
                     }
-                    self.send_ai_message(&format!("Files in {}:\n{}", target, list));
-                    self.set_status(&format!("AI Agent: Listed {}", target));
                 }
-            } else if line.starts_with("@@TEST") {
-                let cmd_str = line.trim_start_matches("@@TEST").trim();
-                let cmd_to_run = if cmd_str.is_empty() { "cargo test" } else { cmd_str };
-                self.set_status(&format!("AI Agent: Running '{}'...", cmd_to_run));
-                
-                let output = if cfg!(windows) {
-                    Command::new("cmd").arg("/c").arg(cmd_to_run).output()
-                } else {
-                    Command::new("sh").arg("-c").arg(cmd_to_run).output()
-                };
+                AgentCommand::Read { path } => {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        self.send_ai_message(&format!("Content of {}:\n```\n{}\n```", path, content));
+                        self.set_status(&format!("AI Agent: Read {}", path));
+                    }
+                }
+                AgentCommand::Delete { path } => {
+                    if fs::remove_file(&path).is_ok() {
+                        self.set_status(&format!("AI Agent: Deleted {}", path));
+                        self.refresh_file_tree();
+                    }
+                }
+                AgentCommand::Rename { old, new } => {
+                    if fs::rename(&old, &new).is_ok() {
+                        self.set_status(&format!("AI Agent: Renamed {} to {}", old, new));
+                        self.refresh_file_tree();
+                    }
+                }
+                AgentCommand::List { path } => {
+                    let target = if path.is_empty() { "." } else { &path };
+                    if let Ok(entries) = fs::read_dir(target) {
+                        let mut list = String::new();
+                        for entry in entries.flatten() {
+                            let file_name = entry.file_name().to_string_lossy().to_string();
+                            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                            list.push_str(&format!("{}{}\n", file_name, if is_dir { "/" } else { "" }));
+                        }
+                        self.send_ai_message(&format!("Files in {}:\n{}", target, list));
+                        self.set_status(&format!("AI Agent: Listed {}", target));
+                    }
+                }
+                AgentCommand::Test { command } => {
+                    let cmd_to_run = if command.is_empty() { "cargo test" } else { &command };
+                    
+                    let output = if cfg!(windows) {
+                        Command::new("cmd").arg("/c").arg(cmd_to_run).output()
+                    } else {
+                        Command::new("sh").arg("-c").arg(cmd_to_run).output()
+                    };
 
-                match output {
-                    Ok(out) => {
-                        let status = if out.status.success() { "PASSED" } else { "FAILED" };
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        let stderr = String::from_utf8_lossy(&out.stderr);
-                        self.send_ai_message(&format!("Test Result ({}):\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr));
-                        self.set_status(&format!("AI Agent: Test {}", status));
-                    }
-                    Err(e) => {
-                        self.send_ai_message(&format!("AI Agent Error: Failed to run test: {}", e));
+                    match output {
+                        Ok(out) => {
+                            let status = if out.status.success() { "PASSED" } else { "FAILED" };
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            let stderr = String::from_utf8_lossy(&out.stderr);
+                            self.send_ai_message(&format!("Test Result ({}):\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr));
+                            self.set_status(&format!("AI Agent: Test {}", status));
+                        }
+                        Err(e) => {
+                            self.send_ai_message(&format!("AI Agent Error: Failed to run test: {}", e));
+                        }
                     }
                 }
-            } else if line.starts_with("@@COMMIT ") {
-                let msg = line.trim_start_matches("@@COMMIT ").trim().trim_matches('"');
-                let _ = Command::new("git").arg("add").arg(".").status();
-                if let Ok(status) = Command::new("git").arg("commit").arg("-m").arg(msg).status() {
-                    if status.success() {
-                        self.set_status(&format!("AI Agent: Committed with message \"{}\"", msg));
-                        self.send_ai_message(&format!("AI Agent: Successfully committed changes."));
+                AgentCommand::Commit { message } => {
+                    let _ = Command::new("git").arg("add").arg(".").status();
+                    if let Ok(status) = Command::new("git").arg("commit").arg("-m").arg(&message).status() {
+                        if status.success() {
+                            self.set_status(&format!("AI Agent: Committed: \"{}\"", message));
+                            self.send_ai_message(&format!("AI Agent: Successfully committed changes."));
+                        }
                     }
                 }
             }
