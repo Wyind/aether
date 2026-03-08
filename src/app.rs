@@ -324,6 +324,9 @@ pub struct App {
     pub ai_generating: bool,
     pub ai_rx: Option<std::sync::mpsc::Receiver<crate::ai::AiResponse>>,
     pub pending_ai_commands: Vec<AgentCommand>,
+    pub ai_completion: Option<String>,
+    pub ai_completion_rx: Option<std::sync::mpsc::Receiver<String>>,
+    pub last_input_time: std::time::Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -399,10 +402,12 @@ impl App {
             show_ai_sidebar: false,
             ai_sidebar_width: 35,
             ai_chat_history: Vec::new(),
-            ai_input_buffer: String::new(),
             ai_generating: false,
             ai_rx: None,
             pending_ai_commands: Vec::new(),
+            ai_completion: None,
+            ai_completion_rx: None,
+            last_input_time: std::time::Instant::now(),
         };
         app.plugin_manager.setup_api().expect("Failed to setup Lua API");
         let _ = app.plugin_manager.load_plugins();
