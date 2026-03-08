@@ -10,6 +10,7 @@ pub mod about;
 pub mod git;
 pub mod git_diff;
 pub mod git_commit;
+pub mod ai_sidebar;
 
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -61,20 +62,32 @@ fn draw_editor(frame: &mut Frame, app: &mut App) {
     // Draw tab bar
     tab_bar::draw_tab_bar(frame, app, main_layout[0]);
 
-    // Content area: [file_tree | editor_pane]
+    // Content area: [file_tree | editor_pane | ai_sidebar]
+    let mut constraints = Vec::new();
     if app.show_file_tree && !app.documents.is_empty() {
-        let content_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(app.file_tree_width),
-                Constraint::Min(1),
-            ])
-            .split(main_layout[1]);
+        constraints.push(Constraint::Length(app.file_tree_width));
+    }
+    constraints.push(Constraint::Min(1));
+    if app.show_ai_sidebar {
+        constraints.push(Constraint::Length(app.ai_sidebar_width));
+    }
 
-        file_tree::draw_file_tree(frame, app, content_layout[0]);
-        draw_editor_content(frame, app, content_layout[1]);
-    } else {
-        draw_editor_content(frame, app, main_layout[1]);
+    let content_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(main_layout[1]);
+
+    let mut current_idx = 0;
+    if app.show_file_tree && !app.documents.is_empty() {
+        file_tree::draw_file_tree(frame, app, content_layout[current_idx]);
+        current_idx += 1;
+    }
+    
+    draw_editor_content(frame, app, content_layout[current_idx]);
+    current_idx += 1;
+
+    if app.show_ai_sidebar {
+        ai_sidebar::draw_ai_sidebar(frame, app, content_layout[current_idx]);
     }
 
     // Draw status bar

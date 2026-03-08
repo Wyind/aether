@@ -153,28 +153,33 @@ fn main() -> io::Result<()> {
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
+        app.check_ai_rx();
         terminal.draw(|f| ui::draw(f, app))?;
 
-        if let Event::Key(key) = event::read()? {
-            match app.screen {
-                AppScreen::Setup => app.handle_setup_input(key),
-                AppScreen::Welcome => app.handle_welcome_input(key),
-                AppScreen::Editor => {
-                    if app.file_picker_active {
-                        app.handle_file_picker_input(key);
-                    } else {
-                        app.handle_editor_input(key);
+        if event::poll(std::time::Duration::from_millis(50))? {
+            if let Event::Key(key) = event::read()? {
+                match app.screen {
+                    AppScreen::Setup => app.handle_setup_input(key),
+                    AppScreen::Welcome => app.handle_welcome_input(key),
+                    AppScreen::Editor => {
+                        if app.show_ai_sidebar && app.focus == AppFocus::AiPrompt {
+                            app.handle_ai_input(key);
+                        } else if app.file_picker_active {
+                            app.handle_file_picker_input(key);
+                        } else {
+                            app.handle_editor_input(key);
+                        }
                     }
+                    AppScreen::CommandPalette => app.handle_command_palette_input(key),
+                    AppScreen::About => app.handle_about_input(key),
+                    AppScreen::Updater => app.handle_updater_input(key),
+                    AppScreen::GitStatus => app.handle_git_status_input(key),
+                    AppScreen::GitDiff => app.handle_git_diff_input(key),
+                    AppScreen::GitCommit => app.handle_git_commit_input(key),
                 }
-                AppScreen::CommandPalette => app.handle_command_palette_input(key),
-                AppScreen::About => app.handle_about_input(key),
-                AppScreen::Updater => app.handle_updater_input(key),
-                AppScreen::GitStatus => app.handle_git_status_input(key),
-                AppScreen::GitDiff => app.handle_git_diff_input(key),
-                AppScreen::GitCommit => app.handle_git_commit_input(key),
+            } else if let Event::Mouse(mouse_event) = event::read()? {
+                app.handle_mouse_event(mouse_event);
             }
-        } else if let Event::Mouse(mouse_event) = event::read()? {
-            app.handle_mouse_event(mouse_event);
         }
 
         if app.should_quit {

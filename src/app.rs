@@ -31,6 +31,7 @@ pub enum EditMode {
 pub enum AppFocus {
     Editor,
     FileTree,
+    AiPrompt,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -299,6 +300,12 @@ pub struct App {
     pub last_lua_key: String,
     pub show_lua_info: bool,
     pub show_tab_switch_hint: bool,
+    pub show_ai_sidebar: bool,
+    pub ai_sidebar_width: u16,
+    pub ai_chat_history: Vec<crate::ai::AiMessage>,
+    pub ai_input_buffer: String,
+    pub ai_generating: bool,
+    pub ai_rx: Option<std::sync::mpsc::Receiver<crate::ai::AiResponse>>,
 }
 
 #[derive(Debug, Clone)]
@@ -370,6 +377,12 @@ impl App {
             git_focus: 0,
             git_commit_message: String::new(),
             git_diff_content: Vec::new(),
+            show_ai_sidebar: false,
+            ai_sidebar_width: 35,
+            ai_chat_history: Vec::new(),
+            ai_input_buffer: String::new(),
+            ai_generating: false,
+            ai_rx: None,
         };
         app.plugin_manager.setup_api().expect("Failed to setup Lua API");
         let _ = app.plugin_manager.load_plugins();
@@ -680,6 +693,79 @@ impl App {
         }
     }
 
+    pub fn handle_ai_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.focus = AppFocus::Editor;
+            }
+            KeyCode::Enter => {
+                if !self.ai_input_buffer.is_empty() && !self.ai_generating {
+                    let prompt = self.ai_input_buffer.clone();
+                    self.ai_input_buffer.clear();
+                    self.send_ai_message(&prompt);
+                }
+            }
+            KeyCode::Char(c) => {
+                self.ai_input_buffer.push(c);
+            }
+            KeyCode::Backspace => {
+                self.ai_input_buffer.pop();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn send_ai_message(&mut self, prompt: &str) {
+        self.ai_chat_history.push(crate::ai::AiMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        });
+        self.ai_chat_history.push(crate::ai::AiMessage {
+            role: "assistant".to_string(),
+            content: String::new(),
+        });
+        self.ai_generating = true;
+        
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.ai_rx = Some(rx);
+        
+        self.ai_assistant.chat(self.ai_chat_history.clone(), tx);
+    }
+
+    pub fn check_ai_rx(&mut self) {
+        if let Some(rx) = &self.ai_rx {
+            while let Ok(response) = rx.try_recv() {
+                match response {
+                    crate::ai::AiResponse::Partial(text) => {
+                        if let Some(msg) = self.ai_chat_history.last_mut() {
+                            if msg.role == "assistant" {
+                                msg.content.push_str(&text);
+                            }
+                        }
+                    }
+                    crate::ai::AiResponse::Full(text) => {
+                        if let Some(msg) = self.ai_chat_history.last_mut() {
+                            if msg.role == "assistant" {
+                                msg.content = text;
+                            }
+                        }
+                        self.ai_generating = false;
+                        self.ai_rx = None;
+                    }
+                    crate::ai::AiResponse::Error(err) => {
+                        if let Some(msg) = self.ai_chat_history.last_mut() {
+                            if msg.role == "assistant" {
+                                msg.content = format!("Error: {}", err);
+                            }
+                        }
+                        self.ai_generating = false;
+                        self.ai_rx = None;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn handle_updater_input(&mut self, key: KeyEvent) {
         if self.updater_completed && key.code == KeyCode::Enter {
             self.screen = AppScreen::Welcome;
@@ -937,6 +1023,17 @@ impl App {
         if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('x') && self.edit_mode == EditMode::Emacs {
             self.command_palette = CommandPaletteState::new();
             self.screen = AppScreen::CommandPalette;
+            return;
+        }
+
+        // Alt+A to toggle AI Sidebar
+        if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('a') {
+            self.show_ai_sidebar = !self.show_ai_sidebar;
+            if self.show_ai_sidebar {
+                self.focus = AppFocus::AiPrompt;
+            } else if self.focus == AppFocus::AiPrompt {
+                self.focus = AppFocus::Editor;
+            }
             return;
         }
 
@@ -1478,21 +1575,9 @@ impl App {
                         let doc = &self.documents[self.active_tab];
                         doc.buffer.get_line(doc.cursor.row).to_string()
                     };
-                    self.set_status("Asking AI...");
-                    
-                    if let Some(completion) = self.ai_assistant.complete(&line_content) {
-                        let doc = &mut self.documents[self.active_tab];
-                        for c in completion.chars() {
-                            if c == '\n' {
-                                doc.insert_newline();
-                            } else {
-                                doc.insert_char(c);
-                            }
-                        }
-                        self.set_status("AI completion inserted");
-                    } else {
-                        self.set_status("AI completion failed or disabled");
-                    }
+                    self.show_ai_sidebar = true;
+                    self.focus = AppFocus::AiPrompt;
+                    self.send_ai_message(&format!("Complete this code:\n```\n{}\n```", line_content));
                 }
             }
             15 => {
@@ -1501,24 +1586,9 @@ impl App {
                         let doc = &self.documents[self.active_tab];
                         doc.buffer.get_line(doc.cursor.row).to_string()
                     };
-                    self.set_status("Asking AI to explain...");
-                    
-                    if let Some(explanation) = self.ai_assistant.explain(&line_content) {
-                        // Open a new document with the explanation
-                        let mut doc = crate::editor::document::Document::new();
-                        for c in explanation.chars() {
-                            if c == '\n' {
-                                doc.insert_newline();
-                            } else {
-                                doc.insert_char(c);
-                            }
-                        }
-                        self.documents.push(doc);
-                        self.active_tab = self.documents.len() - 1;
-                        self.set_status("AI explanation provided");
-                    } else {
-                        self.set_status("AI explanation failed or disabled");
-                    }
+                    self.show_ai_sidebar = true;
+                    self.focus = AppFocus::AiPrompt;
+                    self.send_ai_message(&format!("Explain this code:\n```\n{}\n```", line_content));
                 }
             }
             16 => {

@@ -108,6 +108,20 @@ impl AiConfig {
     }
 }
 
+/// Message roles for AI chat
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiMessage {
+    pub role: String, // "user" or "assistant"
+    pub content: String,
+}
+
+/// Response types from the background AI thread
+pub enum AiResponse {
+    Partial(String),
+    Full(String),
+    Error(String),
+}
+
 /// AI Assistant — handles interaction with the local model
 pub struct AiAssistant {
     config: AiConfig,
@@ -151,6 +165,64 @@ impl AiAssistant {
     /// Explain the selected code
     pub fn explain(&self, code: &str) -> Option<String> {
         self.complete(&format!("Please explain the following code concisely:\n\n{}", code))
+    }
+
+    /// Generate a chat response in a background thread
+    pub fn chat(&self, messages: Vec<AiMessage>, tx: std::sync::mpsc::Sender<AiResponse>) {
+        if !self.is_available() {
+            let _ = tx.send(AiResponse::Error("AI is disabled or unavailable".into()));
+            return;
+        }
+
+        let config = self.config.clone();
+        
+        std::thread::spawn(move || {
+            match config.backend {
+                AiBackend::Ollama => {
+                    let url = format!("{}/api/chat", config.endpoint);
+                    let body = serde_json::json!({
+                        "model": config.model_name,
+                        "messages": messages.iter().map(|m| {
+                            serde_json::json!({
+                                "role": m.role,
+                                "content": m.content
+                            })
+                        }).collect::<Vec<_>>(),
+                        "stream": true
+                    });
+
+                    let response = ureq::post(&url).send_json(body);
+                    
+                    match response {
+                        Ok(resp) => {
+                            let reader = resp.into_reader();
+                            let decoder = serde_json::Deserializer::from_reader(reader).into_iter::<serde_json::Value>();
+                            
+                            let mut full_response = String::new();
+                            
+                            for value in decoder {
+                                if let Ok(json) = value {
+                                    if let Some(content) = json.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+                                        full_response.push_str(content);
+                                        let _ = tx.send(AiResponse::Partial(content.to_string()));
+                                    }
+                                    if let Some(done) = json.get("done").and_then(|d| d.as_bool()) {
+                                        if done { break; }
+                                    }
+                                }
+                            }
+                            let _ = tx.send(AiResponse::Full(full_response));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AiResponse::Error(format!("Request failed: {}", e)));
+                        }
+                    }
+                }
+                _ => {
+                    let _ = tx.send(AiResponse::Error("Unsupported backend".into()));
+                }
+            }
+        });
     }
 }
 
