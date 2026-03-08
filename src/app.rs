@@ -733,6 +733,7 @@ impl App {
     }
 
     pub fn check_ai_rx(&mut self) {
+        let mut should_clear = false;
         if let Some(rx) = &self.ai_rx {
             while let Ok(response) = rx.try_recv() {
                 match response {
@@ -750,7 +751,7 @@ impl App {
                             }
                         }
                         self.ai_generating = false;
-                        self.ai_rx = None;
+                        should_clear = true;
                     }
                     crate::ai::AiResponse::Error(err) => {
                         if let Some(msg) = self.ai_chat_history.last_mut() {
@@ -759,10 +760,13 @@ impl App {
                             }
                         }
                         self.ai_generating = false;
-                        self.ai_rx = None;
+                        should_clear = true;
                     }
                 }
             }
+        }
+        if should_clear {
+            self.ai_rx = None;
         }
     }
 

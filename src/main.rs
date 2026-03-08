@@ -18,7 +18,7 @@ use crossterm::{
 use ratatui::prelude::*;
 use ratatui::crossterm::event::Event;
 
-use app::{App, AppScreen};
+use app::{App, AppScreen, AppFocus};
 
 fn print_help() {
     println!("Aether — a beautiful TUI text editor & IDE");
