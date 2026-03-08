@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Aether
+Comment=A beautiful TUI text editor & IDE
+Exec=aether %F
+Terminal=true
+Type=Application
+Icon=aether
+Categories=Development;TextEditor;
+Keywords=editor;tui;ide;terminal;text-editor;
+MimeType=text/plain;text/x-c;text/x-c++;text/x-python;text/x-rust;

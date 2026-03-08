@@ -1,0 +1,17 @@
+# Aether Configuration
+# This file is auto-generated. Edit to customize your Aether experience.
+
+# /target/
+# /Cargo.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# Build
+/target/
