@@ -34,7 +34,7 @@ pub fn start_updater(app: &mut crate::app::App) {
         // 1.5. Check Version
         let _ = tx.send(UpdateState::CheckingVersion);
         let current_version = env!("CARGO_PKG_VERSION");
-        match ureq::get("https://raw.githubusercontent.com/wyind/aether/main/version.txt").call() {
+        match ureq::get("https://raw.githubusercontent.com/Wyind/aether/master/version.txt").call() {
             Ok(response) => {
                 if let Ok(mut text) = response.into_string() {
                     text = text.trim().to_string();
@@ -60,7 +60,7 @@ pub fn start_updater(app: &mut crate::app::App) {
 
         let clone_status = Command::new("git")
             .arg("clone")
-            .arg("https://github.com/wyind/aether.git")
+            .arg("https://github.com/Wyind/aether.git")
             .arg(&temp_dir)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
