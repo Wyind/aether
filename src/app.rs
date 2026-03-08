@@ -745,6 +745,8 @@ impl App {
 
     pub fn check_ai_rx(&mut self) {
         let mut should_clear = false;
+        let mut full_text = None;
+
         if let Some(rx) = &self.ai_rx {
             while let Ok(response) = rx.try_recv() {
                 match response {
@@ -761,10 +763,7 @@ impl App {
                                 msg.content = text.clone();
                             }
                         }
-                        
-                        // Parse agent commands
-                        self.process_ai_agent_commands(&text);
-                        
+                        full_text = Some(text);
                         self.ai_generating = false;
                         should_clear = true;
                     }
@@ -780,6 +779,11 @@ impl App {
                 }
             }
         }
+
+        if let Some(text) = full_text {
+            self.process_ai_agent_commands(&text);
+        }
+
         if should_clear {
             self.ai_rx = None;
         }

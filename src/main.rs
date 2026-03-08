@@ -176,6 +176,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                     AppScreen::GitStatus => app.handle_git_status_input(key),
                     AppScreen::GitDiff => app.handle_git_diff_input(key),
                     AppScreen::GitCommit => app.handle_git_commit_input(key),
+                    AppScreen::Controls => app.handle_controls_input(key),
                 }
             } else if let Event::Mouse(mouse_event) = event::read()? {
                 app.handle_mouse_event(mouse_event);

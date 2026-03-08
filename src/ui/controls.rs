@@ -1,6 +1,6 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use crate::app::{App, EditMode, VimSubMode};
+use crate::app::{App, EditMode};
 
 pub fn draw_controls(frame: &mut Frame, app: &App) {
     let theme = &app.theme;
@@ -132,7 +132,7 @@ pub fn draw_controls(frame: &mut Frame, app: &App) {
         }
     }
 
-    let constraints = vec![Constraint::Min(1)];
+
     let content = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(content, layout[1]);
 
