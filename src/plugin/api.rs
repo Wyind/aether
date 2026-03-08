@@ -101,6 +101,14 @@ pub fn register_api(lua: &Lua) -> LuaResult<()> {
         }
     })?)?;
 
+    // High-precision time in seconds
+    aether.set("get_time", lua.create_function(|_, _: ()| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now();
+        let duration = now.duration_since(UNIX_EPOCH).unwrap_or_default();
+        Ok(duration.as_secs_f64())
+    })?)?;
+
     lua.globals().set("aether", aether)?;
     lua.globals().set("__app_ptr", 0usize)?;
 
