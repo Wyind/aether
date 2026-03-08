@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A beautiful TUI text editor & IDE — the best of NeoVim and Nano, with modern IDE features.</strong><br/>
-  <em>Note: Not to be confused with <a href="https://github.com/omarchy/aether">aether, the theming tool for omarchy</a>.</em>
+  <em>Note: Not to be confused with <a href="https://github.com/bjarneo/aether">Aether, the theming tool for Omarchy</a>.</em>
 </p>
 
 <p align="center">
