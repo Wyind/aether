@@ -294,6 +294,7 @@ pub struct App {
     pub updater_status: String,
     pub updater_progress: u16,
     pub updater_completed: bool,
+    pub updater_logs: Vec<String>,
     pub plugin_manager: PluginManager,
     pub git_unstaged: Vec<String>,
     pub git_staged: Vec<String>,
@@ -374,6 +375,7 @@ impl App {
             updater_status: "Starting update check...".to_string(),
             updater_progress: 0,
             updater_completed: false,
+            updater_logs: Vec::new(),
             plugin_manager: PluginManager::new().expect("Failed to initialize Lua"),
             git_unstaged: Vec::new(),
             git_staged: Vec::new(),
@@ -914,11 +916,41 @@ impl App {
 
     pub fn handle_updater_input(&mut self, key: KeyEvent) {
         if self.updater_completed && key.code == KeyCode::Enter {
-            self.screen = AppScreen::Welcome;
-            self.updater_rx = None;
+            if self.updater_status.contains("Update complete") {
+                self.restart_app();
+            } else {
+                self.screen = AppScreen::Welcome;
+                self.updater_rx = None;
+            }
         } else if key.code == KeyCode::Esc {
             self.screen = AppScreen::Welcome;
             self.updater_rx = None;
+        }
+    }
+
+    pub fn restart_app(&mut self) {
+        let binary_name = if cfg!(windows) { "aether.exe" } else { "aether" };
+        let target_path = if cfg!(windows) {
+            dirs::data_local_dir().map(|d| d.join("Aether").join("bin").join(binary_name))
+        } else if cfg!(target_os = "macos") {
+            dirs::home_dir().map(|h| h.join("bin").join(binary_name))
+        } else {
+            dirs::home_dir().map(|h| h.join(".local").join("bin").join(binary_name))
+        };
+
+        if let Some(path) = target_path {
+            let mut cmd = std::process::Command::new(path);
+            
+            // Reopen current file if possible
+            if !self.documents.is_empty() {
+                if let Some(file_path) = &self.documents[self.active_tab].file_path {
+                    cmd.arg(file_path);
+                }
+            }
+
+            if cmd.spawn().is_ok() {
+                self.should_quit = true;
+            }
         }
     }
 
