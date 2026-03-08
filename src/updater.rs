@@ -74,7 +74,7 @@ pub fn start_updater(app: &mut crate::app::App) {
 
         // 3. Build
         let _ = tx.send(UpdateState::Building);
-        let mut build_cmd = Command::new("cargo")
+        let build_cmd = Command::new("cargo")
             .arg("build")
             .arg("--release")
             .current_dir(&temp_dir)
