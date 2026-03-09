@@ -1,6 +1,6 @@
+use crate::app::App;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use crate::app::App;
 
 /// Built-in TUI file picker for opening files
 pub fn draw_file_picker(frame: &mut Frame, app: &App) {
@@ -22,7 +22,9 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
     let block = Block::default()
         .title(Span::styled(
             "  Open File ",
-            Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -44,7 +46,7 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(2), // Current path
             Constraint::Length(2), // Search filter
-            Constraint::Min(1),   // File list
+            Constraint::Min(1),    // File list
             Constraint::Length(1), // Hints
         ])
         .split(inner);
@@ -58,7 +60,8 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
     let path_inner = path_block.inner(layout[0]);
     frame.render_widget(path_block, layout[0]);
     frame.render_widget(
-        Paragraph::new(path_display).style(Style::default().fg(theme.accent_dim).bg(theme.popup_bg)),
+        Paragraph::new(path_display)
+            .style(Style::default().fg(theme.accent_dim).bg(theme.popup_bg)),
         path_inner,
     );
 
@@ -92,9 +95,14 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
     let filtered = &fp.filtered_entries;
     let mut lines: Vec<Line> = Vec::new();
 
-    for (display_i, entry_i) in filtered.iter().enumerate().skip(scroll).take(visible_height) {
+    for (display_i, entry_i) in filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_height)
+    {
         let entry = &fp.entries[*entry_i];
-        let is_selected = display_i == fp.selected;
+        let is_selected = (scroll + display_i) == fp.selected;
 
         let icon = if entry.is_dir {
             " "
@@ -111,7 +119,10 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
         let name_width = popup_width.saturating_sub(16) as usize;
 
         let style = if is_selected {
-            Style::default().fg(theme.accent).bg(theme.sidebar_active_bg).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.accent)
+                .bg(theme.sidebar_active_bg)
+                .add_modifier(Modifier::BOLD)
         } else if entry.is_dir {
             Style::default().fg(theme.accent_dim).bg(theme.popup_bg)
         } else {
@@ -119,7 +130,9 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
         };
 
         let size_style = if is_selected {
-            Style::default().fg(theme.comment).bg(theme.sidebar_active_bg)
+            Style::default()
+                .fg(theme.comment)
+                .bg(theme.sidebar_active_bg)
         } else {
             Style::default().fg(theme.comment).bg(theme.popup_bg)
         };
@@ -128,7 +141,10 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
 
         let line = Line::from(vec![
             Span::styled(prefix, style),
-            Span::styled(format!("{}{:<width$}", icon, entry.name, width = name_width), style),
+            Span::styled(
+                format!("{}{:<width$}", icon, entry.name, width = name_width),
+                style,
+            ),
             Span::styled(size_str, size_style),
         ]);
         lines.push(line);
@@ -147,8 +163,8 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
 
     // Hints bar
     let hints = "  Enter: Open │ Backspace: Parent │ /: Filter │ Esc: Cancel";
-    let hints_widget = Paragraph::new(hints)
-        .style(Style::default().fg(theme.comment).bg(theme.popup_bg));
+    let hints_widget =
+        Paragraph::new(hints).style(Style::default().fg(theme.comment).bg(theme.popup_bg));
     frame.render_widget(hints_widget, layout[3]);
 }
 

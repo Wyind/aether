@@ -111,6 +111,7 @@ impl WelcomeState {
 pub struct CommandPaletteState {
     pub query: String,
     pub selected: usize,
+    pub scroll: usize,
     pub commands: Vec<(String, String)>,
     pub filtered: Vec<usize>,
 }
@@ -227,6 +228,7 @@ impl CommandPaletteState {
         Self {
             query: String::new(),
             selected: 0,
+            scroll: 0,
             commands,
             filtered,
         }
@@ -254,6 +256,7 @@ impl CommandPaletteState {
             self.filtered = scored.into_iter().map(|(i, _)| i).collect();
         }
         self.selected = 0;
+        self.scroll = 0;
     }
 }
 
@@ -2185,11 +2188,20 @@ impl App {
             KeyCode::Up => {
                 if self.command_palette.selected > 0 {
                     self.command_palette.selected -= 1;
+                    if self.command_palette.selected < self.command_palette.scroll {
+                        self.command_palette.scroll = self.command_palette.selected;
+                    }
                 }
             }
             KeyCode::Down => {
+                let visible_height = 14; // popup_height(16) - search(2)
                 if self.command_palette.selected + 1 < self.command_palette.filtered.len() {
                     self.command_palette.selected += 1;
+                    if self.command_palette.selected >= self.command_palette.scroll + visible_height
+                    {
+                        self.command_palette.scroll =
+                            self.command_palette.selected - visible_height + 1;
+                    }
                 }
             }
             KeyCode::Enter => {
@@ -2400,6 +2412,14 @@ impl App {
                     < self.file_picker_state.filtered_entries.len()
                 {
                     self.file_picker_state.selected += 1;
+                    // Scroll down if needed
+                    let visible_height = self.file_picker_state.filtered_entries.len().min(20);
+                    if self.file_picker_state.selected
+                        >= self.file_picker_state.scroll + visible_height
+                    {
+                        self.file_picker_state.scroll =
+                            self.file_picker_state.selected - visible_height + 1;
+                    }
                 }
             }
             KeyCode::Enter => {

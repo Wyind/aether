@@ -1,6 +1,6 @@
+use crate::app::App;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use crate::app::App;
 
 pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     let theme = &app.theme;
@@ -14,15 +14,16 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     let popup_area = Rect::new(x, y, popup_width, popup_height);
 
     // Semi-transparent overlay effect (darken background)
-    let overlay = Block::default()
-        .style(Style::default().bg(Color::Rgb(0, 0, 0)));
+    let overlay = Block::default().style(Style::default().bg(Color::Rgb(0, 0, 0)));
     frame.render_widget(overlay, area);
 
     // Popup block
     let block = Block::default()
         .title(Span::styled(
             "  Command Palette ",
-            Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -35,10 +36,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     // Layout: [search input, results]
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(1),
-        ])
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(inner);
 
     // Search input
@@ -51,7 +49,10 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     let input_style = if app.command_palette.query.is_empty() {
         Style::default().fg(theme.comment).bg(theme.popup_bg)
     } else {
-        Style::default().fg(theme.fg).bg(theme.popup_bg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme.fg)
+            .bg(theme.popup_bg)
+            .add_modifier(Modifier::BOLD)
     };
 
     let search_block = Block::default()
@@ -67,20 +68,32 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     // Results list
     let visible_height = layout[1].height as usize;
     let palette = &app.command_palette;
+    let scroll = palette.scroll;
     let mut lines: Vec<Line> = Vec::new();
 
-    for (display_idx, &cmd_idx) in palette.filtered.iter().enumerate().take(visible_height) {
+    for (display_idx, &cmd_idx) in palette
+        .filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_height)
+    {
         let (name, desc) = &palette.commands[cmd_idx];
-        let is_selected = display_idx == palette.selected;
+        let is_selected = (scroll + display_idx) == palette.selected;
 
         let style = if is_selected {
-            Style::default().fg(theme.accent).bg(theme.sidebar_active_bg).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.accent)
+                .bg(theme.sidebar_active_bg)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.fg).bg(theme.popup_bg)
         };
 
         let desc_style = if is_selected {
-            Style::default().fg(theme.accent_dim).bg(theme.sidebar_active_bg)
+            Style::default()
+                .fg(theme.accent_dim)
+                .bg(theme.sidebar_active_bg)
         } else {
             Style::default().fg(theme.comment).bg(theme.popup_bg)
         };

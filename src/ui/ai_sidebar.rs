@@ -192,16 +192,36 @@ pub fn draw_ai_sidebar(frame: &mut Frame, app: &App, area: Rect) {
 
     // Set cursor position for AI prompt
     if app.focus == AppFocus::AiPrompt {
-        // Calculate wrapped cursor position (simple approximation for now)
-        let input_width = chunks[1].width.saturating_sub(2);
+        let input_width = (chunks[1].width.saturating_sub(2)) as usize;
         if input_width > 0 {
-            let cursor_x = (app.ai_input_buffer.len() % input_width as usize) as u16;
-            let cursor_y = (app.ai_input_buffer.len() / input_width as usize) as u16;
+            let input_height = (chunks[1].height.saturating_sub(2)) as usize;
 
-            if cursor_y < chunks[1].height.saturating_sub(2) {
+            // Count actual newlines in the input
+            let actual_newlines = app.ai_input_buffer.chars().filter(|&c| c == '\n').count();
+
+            // Calculate wrapped position
+            let buffer_len = app.ai_input_buffer.len();
+            let wrapped_y = buffer_len / input_width;
+            let wrapped_x = buffer_len % input_width;
+
+            // Use the actual newline position if it's larger than wrapped position
+            let cursor_y = actual_newlines.max(wrapped_y);
+            let cursor_x = if actual_newlines >= wrapped_y {
+                // Inside an actual line, count chars after last newline
+                if let Some(last_newline_pos) = app.ai_input_buffer.rfind('\n') {
+                    buffer_len - last_newline_pos - 1
+                } else {
+                    buffer_len
+                }
+            } else {
+                wrapped_x
+            };
+
+            // Only show cursor if it's within visible bounds
+            if cursor_y < input_height && cursor_x < input_width {
                 frame.set_cursor_position(Position::new(
-                    chunks[1].x + 1 + cursor_x,
-                    chunks[1].y + 1 + cursor_y,
+                    chunks[1].x + 1 + cursor_x as u16,
+                    chunks[1].y + 1 + cursor_y as u16,
                 ));
             }
         }
