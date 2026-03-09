@@ -40,11 +40,27 @@ pub fn draw_ai_sidebar(frame: &mut Frame, app: &App, area: Rect) {
 
         messages.push(Line::from(vec![Span::styled(title, style)]));
 
-        // Wrap chat history lines
-        // Since Paragraph doesn't easily expose wrapped lines to us here for direct push,
-        // we'll rely on Paragraph's own wrapping when we render.
-        for line in msg.content.lines() {
-            messages.push(Line::from(format!("  {}", line)));
+        let available_width = (chunks[0].width as usize).saturating_sub(4);
+        if available_width > 0 {
+            let mut current_line = String::from("  ");
+            for word in msg.content.split_whitespace() {
+                if current_line.len() + word.len() + 1 > available_width {
+                    messages.push(Line::from(current_line));
+                    current_line = format!("  {}", word);
+                } else {
+                    if !current_line.ends_with("  ") {
+                        current_line.push(' ');
+                    }
+                    current_line.push_str(word);
+                }
+            }
+            if current_line.len() > 2 {
+                messages.push(Line::from(current_line));
+            }
+        } else {
+            for line in msg.content.lines() {
+                messages.push(Line::from(format!("  {}", line)));
+            }
         }
         messages.push(Line::from(""));
     }

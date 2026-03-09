@@ -58,10 +58,12 @@ impl AiConfig {
         )
     }
 
+    #[allow(dead_code)]
     pub fn is_local(&self) -> bool {
         matches!(self.backend, AiBackend::Ollama | AiBackend::LlamaCpp)
     }
 
+    #[allow(dead_code)]
     pub fn needs_api_key(&self) -> bool {
         self.is_online()
     }
@@ -135,6 +137,7 @@ impl AiConfig {
             .spawn();
     }
 
+    #[allow(dead_code)]
     pub fn verify_api_key(backend: &AiBackend, api_key: &str, _endpoint: &str) -> bool {
         if api_key.is_empty() {
             return false;
@@ -196,7 +199,7 @@ pub enum AiResponse {
 }
 
 pub struct AiAssistant {
-    config: AiConfig,
+    pub config: AiConfig,
 }
 
 impl AiAssistant {
@@ -511,7 +514,7 @@ IMPORTANT: All file operations and shell commands are held for user approval in 
         let mut contents: Vec<serde_json::Value> = Vec::new();
 
         for m in &messages {
-            let role = if m.role == "assistant" {
+            let _role = if m.role == "assistant" {
                 "assistant"
             } else {
                 "user"

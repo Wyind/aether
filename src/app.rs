@@ -4,8 +4,6 @@ use crate::editor::document::Document;
 use crate::plugin::PluginManager;
 use crate::theme::Theme;
 use std::borrow::Cow;
-use std::io::Read;
-use ureq;
 
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -182,6 +180,10 @@ impl CommandPaletteState {
             (
                 "Toggle AI Sidebar".to_string(),
                 "Show or hide the AI assistant panel".to_string(),
+            ),
+            (
+                "Switch AI Model".to_string(),
+                "Cycle through available AI models/backends".to_string(),
             ),
             (
                 "Git: Interactive Status".to_string(),
@@ -421,8 +423,11 @@ pub struct App {
     pub ai_generating: bool,
     pub ai_rx: Option<std::sync::mpsc::Receiver<crate::ai::AiResponse>>,
     pub pending_ai_commands: Vec<AgentCommand>,
+    #[allow(dead_code)]
     pub ai_completion: Option<String>,
+    #[allow(dead_code)]
     pub ai_completion_rx: Option<std::sync::mpsc::Receiver<String>>,
+    #[allow(dead_code)]
     pub last_input_time: std::time::Instant,
 }
 
@@ -629,6 +634,87 @@ impl App {
         self.config.theme_index = self.theme_index;
         let _ = self.config.save();
         self.set_status(&format!("Theme: {}", self.theme.name));
+    }
+
+    pub fn cycle_ai_model(&mut self) {
+        static AI_MODELS: &[(&str, &str, &str)] = &[
+            ("ollama", "codellama", "Ollama (codellama)"),
+            ("ollama", "llama3", "Ollama (llama3)"),
+            ("ollama", "llama3.2", "Ollama (llama3.2)"),
+            ("ollama", "mistral", "Ollama (mistral)"),
+            ("ollama", "starcoder2", "Ollama (starcoder2)"),
+            ("ollama", "qwen2.5-coder", "Ollama (qwen2.5-coder)"),
+            ("openai", "gpt-4o", "OpenAI (GPT-4o)"),
+            ("openai", "gpt-4o-mini", "OpenAI (GPT-4o-mini)"),
+            (
+                "anthropic",
+                "claude-sonnet-4-20250514",
+                "Anthropic (Claude Sonnet)",
+            ),
+            (
+                "anthropic",
+                "claude-3-haiku-20240307",
+                "Anthropic (Claude Haiku)",
+            ),
+            ("gemini", "gemini-2.0-flash", "Google Gemini (2.0 Flash)"),
+            ("gemini", "gemini-1.5-pro", "Google Gemini (1.5 Pro)"),
+            ("grok", "grok-3-mini-fast", "xAI Grok (3 Mini)"),
+            ("grok", "grok-2", "xAI Grok (2)"),
+        ];
+
+        let current_backend = match self.ai_assistant.config.backend {
+            crate::ai::AiBackend::Ollama => "ollama",
+            crate::ai::AiBackend::OpenAI => "openai",
+            crate::ai::AiBackend::Anthropic => "anthropic",
+            crate::ai::AiBackend::Gemini => "gemini",
+            crate::ai::AiBackend::Grok => "grok",
+            crate::ai::AiBackend::LlamaCpp => "llamacpp",
+            crate::ai::AiBackend::None => "none",
+        };
+
+        let current_model = self.ai_assistant.config.model_name.as_str();
+
+        let current_idx = AI_MODELS
+            .iter()
+            .position(|(b, m, _)| *b == current_backend && *m == current_model)
+            .unwrap_or(0);
+
+        let next_idx = (current_idx + 1) % AI_MODELS.len();
+        let (backend_str, model_name, display_name) = AI_MODELS[next_idx];
+
+        let is_ollama = backend_str == "ollama";
+
+        let backend = match backend_str {
+            "ollama" => crate::ai::AiBackend::Ollama,
+            "openai" => crate::ai::AiBackend::OpenAI,
+            "anthropic" => crate::ai::AiBackend::Anthropic,
+            "gemini" => crate::ai::AiBackend::Gemini,
+            "grok" => crate::ai::AiBackend::Grok,
+            _ => crate::ai::AiBackend::None,
+        };
+
+        self.ai_assistant = crate::ai::AiAssistant::new(crate::ai::AiConfig {
+            enabled: true,
+            backend,
+            model_name: model_name.to_string(),
+            endpoint: if is_ollama {
+                "http://localhost:11434".to_string()
+            } else {
+                String::new()
+            },
+            api_key: self.ai_assistant.config.api_key.clone(),
+        });
+
+        self.config.ai_enabled = true;
+        self.config.ai_backend = backend_str.to_string();
+        self.config.ai_model = model_name.to_string();
+        let _ = self.config.save();
+
+        if is_ollama {
+            crate::ai::AiConfig::start_ollama();
+        }
+
+        self.set_status(&format!("AI Model: {}", display_name));
     }
 
     pub fn refresh_file_tree(&mut self) {
@@ -1247,9 +1333,7 @@ impl App {
                     {
                         if status.success() {
                             self.set_status(&format!("AI Agent: Committed: \"{}\"", message));
-                            self.send_ai_message(&format!(
-                                "AI Agent: Successfully committed changes."
-                            ));
+                            self.send_ai_message("AI Agent: Successfully committed changes.");
                         }
                     }
                 }
@@ -1423,9 +1507,8 @@ impl App {
         }
 
         if event.kind == MouseEventKind::Down(MouseButton::Left) {
-            match self.screen {
-                AppScreen::Welcome => self.handle_welcome_mouse(event.column, event.row),
-                _ => {}
+            if self.screen == AppScreen::Welcome {
+                self.handle_welcome_mouse(event.column, event.row);
             }
         }
     }
@@ -1551,7 +1634,7 @@ impl App {
                     }
                     return;
                 }
-                KeyCode::Char(c) if c >= '1' && c <= '9' => {
+                KeyCode::Char(c) if ('1'..='9').contains(&c) => {
                     let idx = (c as u8 - b'1') as usize;
                     if idx < self.documents.len() {
                         self.active_tab = idx;
@@ -2211,9 +2294,12 @@ impl App {
                 self.show_ai_sidebar = !self.show_ai_sidebar;
             }
             18 => {
-                self.screen = AppScreen::GitStatus;
+                self.cycle_ai_model();
             }
             19 => {
+                self.screen = AppScreen::GitStatus;
+            }
+            20 => {
                 let status = std::process::Command::new("git")
                     .arg("status")
                     .arg("--short")
@@ -2222,14 +2308,14 @@ impl App {
                     .unwrap_or_else(|_| "Git error".to_string());
                 self.set_status(&format!("Git: {}", status.replace('\n', " ")));
             }
-            20 => {
+            21 => {
                 let _ = std::process::Command::new("git")
                     .arg("add")
                     .arg(".")
                     .status();
                 self.set_status("Git: Added all changes");
             }
-            21 => {
+            22 => {
                 let _ = std::process::Command::new("git")
                     .arg("commit")
                     .arg("-m")
@@ -2237,11 +2323,11 @@ impl App {
                     .status();
                 self.set_status("Git: Committed changes");
             }
-            22 => {
+            23 => {
                 let _ = std::process::Command::new("git").arg("push").status();
                 self.set_status("Git: Pushed commits to remote");
             }
-            23 => {
+            24 => {
                 // Uses GitHub CLI to authenticate through web browser
                 let _ = std::process::Command::new("gh")
                     .arg("auth")
@@ -2250,7 +2336,7 @@ impl App {
                     .spawn();
                 self.set_status("GitHub: Login process initiated");
             }
-            24 => {
+            25 => {
                 self.show_lua_info = !self.show_lua_info;
                 self.config.show_lua_info = self.show_lua_info;
                 let _ = self.config.save();
@@ -2263,7 +2349,7 @@ impl App {
                     }
                 ));
             }
-            25 => {
+            26 => {
                 self.show_tab_switch_hint = !self.show_tab_switch_hint;
                 self.config.show_tab_switch_hint = self.show_tab_switch_hint;
                 let _ = self.config.save();
@@ -2276,10 +2362,10 @@ impl App {
                     }
                 ));
             }
-            26 => {
+            27 => {
                 self.screen = AppScreen::Controls;
             }
-            27 => {
+            28 => {
                 self.should_quit = true;
             }
             _ => {}
