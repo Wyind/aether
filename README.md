@@ -25,7 +25,7 @@
 
 ## Features
 
-- **Three editing modes**: Vim, Nano, and Aether (a smart hybrid)
+- **Four editing modes**: Vim, Nano, Emacs, and Aether (a smart hybrid)
 - **Beautiful TUI** with Textual-quality visuals
 - **10 built-in themes** — Aether Dark, Aether Light, Ember, Frost, Midnight, Sakura, Void, Oceanic, Solarized, Dracula
 - **Custom themes** via TOML files
@@ -60,13 +60,16 @@ make install
 ### Windows
 
 1. **Install Rust**: Download and run the installer from [rustup.rs](https://rustup.rs/).
-2. **Clone & Build**:
+
+2. **Install Cmake**: This is needed for building, and will need to be installed, as there are no prebuilt binaries. 
+
+3. **Clone & Build**:
    ```powershell
    git clone https://github.com/wyind/aether.git
    cd aether
    make install
    ```
-   This will build the binary, move it to `~/.local/bin`, and create a Start Menu shortcut automatically.
+   This will build the binary, and create a Start Menu shortcut automatically.
 
 ### Requirements
 
@@ -85,13 +88,7 @@ aether main.rs
 aether src/*.rs
 
 # Re-run setup wizard
-aether --setup
-
-# Start with a specific theme
-aether --theme Ember
-
-# Start with a specific mode
-aether --mode vim
+aether --setup (or, go into the settings because my code is ass)
 
 # Show help
 aether --help
