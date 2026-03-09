@@ -79,7 +79,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
         .take(visible_height)
     {
         let (name, desc) = &palette.commands[cmd_idx];
-        let is_selected = (scroll + display_idx) == palette.selected;
+        let is_selected = cmd_idx == palette.selected;
 
         let style = if is_selected {
             Style::default()
