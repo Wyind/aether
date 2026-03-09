@@ -61,15 +61,13 @@ make install
 
 1. **Install Rust**: Download and run the installer from [rustup.rs](https://rustup.rs/).
 
-2. **Install Git for Windows**: This is needed for building, and will need to be installed to use the make command, as there are no prebuilt binaries. 
-
-3. **Clone & Build**:
+2. **Clone & Build**:
    ```bash
    git clone https://github.com/wyind/aether.git
    cd aether
-   make install
+   cargo build --release
    ```
-   This will build the binary, and create a Start Menu shortcut automatically.
+   This will build the binary, in the ```target/release``` folder, auto adding as a windows start menu shortcut is planned.
 
 ### Requirements
 
