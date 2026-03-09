@@ -8,7 +8,10 @@ pub struct Config {
     pub theme_index: usize,
     pub edit_mode: String,
     pub ai_enabled: bool,
+    pub ai_backend: String,
     pub ai_model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_api_key: Option<String>,
     pub auto_update: bool,
     pub mouse_support: bool,
     pub show_line_numbers: bool,
@@ -28,7 +31,9 @@ impl Default for Config {
             theme_index: 0,
             edit_mode: "aether".to_string(),
             ai_enabled: false,
+            ai_backend: "none".to_string(),
             ai_model: "none".to_string(),
+            ai_api_key: None,
             auto_update: true,
             mouse_support: true,
             show_line_numbers: true,
@@ -69,8 +74,8 @@ impl Config {
     pub fn save(&self) -> io::Result<()> {
         let dir = Self::config_dir();
         std::fs::create_dir_all(&dir)?;
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let content =
+            toml::to_string_pretty(self).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         std::fs::write(Self::config_path(), content)
     }
 }

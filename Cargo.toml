@@ -23,6 +23,9 @@ whoami = "1"
 chrono = "0.4"
 ureq = { version = "2.9", features = ["json"] }
 mlua = { version = "0.9", features = ["lua54", "vendored"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"], default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+futures-util = "0.3"
 
 [profile.release]
 opt-level = 3

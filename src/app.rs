@@ -472,13 +472,18 @@ impl App {
             file_picker_state: FilePickerState::new(),
             ai_assistant: AiAssistant::new(crate::ai::AiConfig {
                 enabled: config.ai_enabled,
-                backend: if config.ai_enabled {
-                    crate::ai::AiBackend::Ollama
-                } else {
-                    crate::ai::AiBackend::None
+                backend: match config.ai_backend.as_str() {
+                    "ollama" => crate::ai::AiBackend::Ollama,
+                    "openai" => crate::ai::AiBackend::OpenAI,
+                    "anthropic" => crate::ai::AiBackend::Anthropic,
+                    "gemini" => crate::ai::AiBackend::Gemini,
+                    "grok" => crate::ai::AiBackend::Grok,
+                    "llamacpp" => crate::ai::AiBackend::LlamaCpp,
+                    _ => crate::ai::AiBackend::None,
                 },
                 model_name: config.ai_model.clone(),
                 endpoint: "http://localhost:11434".to_string(),
+                api_key: config.ai_api_key.clone(),
             }),
             focus: AppFocus::Editor,
             expanded_dirs: std::collections::HashSet::new(),
@@ -681,6 +686,7 @@ impl App {
                             backend: crate::ai::AiBackend::Ollama,
                             model_name: model.to_string(),
                             endpoint: "http://localhost:11434".to_string(),
+                            api_key: None,
                         });
                     }
 
