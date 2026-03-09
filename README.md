@@ -46,6 +46,8 @@
 
 ## Installation
 
+### NOTICE: This will require a [Nerd Font](https://www.nerdfonts.com/), installed on the system for proper icons. it will work, but it will look weird.
+
 ### Linux & macOS
 
 ```bash
