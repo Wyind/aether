@@ -61,10 +61,10 @@ make install
 
 1. **Install Rust**: Download and run the installer from [rustup.rs](https://rustup.rs/).
 
-2. **Install Cmake**: This is needed for building, and will need to be installed, as there are no prebuilt binaries. 
+2. **Install Git for Windows**: This is needed for building, and will need to be installed to use the make command, as there are no prebuilt binaries. 
 
 3. **Clone & Build**:
-   ```powershell
+   ```bash
    git clone https://github.com/wyind/aether.git
    cd aether
    make install
