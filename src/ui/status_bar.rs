@@ -15,6 +15,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             VimSubMode::Normal => " NORMAL ",
             VimSubMode::Insert => " INSERT ",
             VimSubMode::Command => " COMMAND ",
+            VimSubMode::Visual => " VISUAL ",
         },
         EditMode::Nano => " NANO ",
         EditMode::Emacs => " EMACS ",
@@ -26,6 +27,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             VimSubMode::Normal => Style::default().fg(theme.bg).bg(theme.accent).add_modifier(Modifier::BOLD),
             VimSubMode::Insert => Style::default().fg(theme.bg).bg(theme.success).add_modifier(Modifier::BOLD),
             VimSubMode::Command => Style::default().fg(theme.bg).bg(theme.warning).add_modifier(Modifier::BOLD),
+            VimSubMode::Visual => Style::default().fg(theme.bg).bg(theme.accent_dim).add_modifier(Modifier::BOLD),
         },
         EditMode::Nano => Style::default().fg(theme.bg).bg(theme.string).add_modifier(Modifier::BOLD),
         EditMode::Emacs => Style::default().fg(theme.bg).bg(theme.accent).add_modifier(Modifier::BOLD),
@@ -52,9 +54,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let right_info = if !app.documents.is_empty() {
         let doc = &app.documents[app.active_tab];
         format!(
-            " Ln {}, Col {} │ {} │ UTF-8 ",
+            " Ln {}/{} Col {} ({}) │ {} │ UTF-8 ",
             doc.cursor.row + 1,
+            doc.line_count(),
             doc.cursor.col + 1,
+            doc.char_count(),
             doc.file_type,
         )
     } else {

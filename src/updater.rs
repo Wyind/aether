@@ -140,6 +140,7 @@ pub fn start_updater(app: &mut crate::app::App) {
 pub fn check_updater_status(app: &mut crate::app::App) {
     if let Some(rx) = &app.updater_rx {
         while let Ok(state) = rx.try_recv() {
+            let state: UpdateState = state;
             match state {
                 UpdateState::CheckingNetwork => { app.updater_status = "Checking network...".to_string(); app.updater_progress = 10; }
                 UpdateState::CheckingVersion => { app.updater_status = "Checking for updates...".to_string(); app.updater_progress = 20; }
@@ -229,7 +230,7 @@ pub fn draw_updater(frame: &mut Frame, app: &mut crate::app::App) {
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL))
         .gauge_style(Style::default().fg(Color::Rgb(0, 200, 255)).bg(Color::Rgb(55, 65, 81)))
-        .percent(app.updater_progress);
+        .percent(app.updater_progress as u16);
     
     let gauge_area = Rect::new(inner.x + 2, inner.y + inner.height.saturating_sub(4), inner.width.saturating_sub(4), 3);
     frame.render_widget(gauge, gauge_area);

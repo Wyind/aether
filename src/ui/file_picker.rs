@@ -102,7 +102,7 @@ pub fn draw_file_picker(frame: &mut Frame, app: &App) {
         .take(visible_height)
     {
         let entry = &fp.entries[*entry_i];
-        let is_selected = (scroll + display_i) == fp.selected;
+        let is_selected = display_i == fp.selected;
 
         let icon = if entry.is_dir {
             " "

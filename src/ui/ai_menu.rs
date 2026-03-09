@@ -27,20 +27,19 @@ pub fn draw_ai_menu(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, &model)| {
-            let prefix = if i == selected {
-                "▸"
-            } else {
-                " ";
-            };
-            let style = if i == selected {
+            let is_selected = i == selected;
+            let prefix = if is_selected { " ▸ " } else { "   " };
+            
+            let style = if is_selected {
                 Style::default()
                     .fg(theme.accent)
+                    .bg(theme.sidebar_active_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme.fg)
+                Style::default().fg(theme.fg).bg(theme.popup_bg)
             };
 
-            Line::from(Span::styled(format!("{} {}", prefix, model), style))
+            Line::from(Span::styled(format!("{}{}", prefix, model), style))
         })
         .collect();
 

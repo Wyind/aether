@@ -86,12 +86,15 @@ pub fn draw_welcome(frame: &mut Frame, app: &mut App) {
 
     lines.push(Line::from(""));
 
+    // Calculate scrolling parameters
+    let visible_height = (area.height.saturating_sub(18)) as usize; // Deduct fixed content
+    let _scroll_start = app
+        .welcome_state
+        .selected_option
+        .saturating_sub(visible_height / 2);
+
     // Menu options
     let mut options = vec![
-    // Calculate visible height and scrolling logic
-    let visible_height = (area.height.saturating_sub(18)) as usize; // Deduct fixed content
-    let scroll_start = app.welcome_state.selected_option.saturating_sub(visible_height / 2);
-    let scroll_end = scroll_start + visible_height;
         ("n", "New File", "Create a new empty file"),
         ("o", "Open File", "Browse and open a file"),
         ("c", "Controls", "Show keyboard shortcuts and help"),
@@ -186,7 +189,7 @@ pub fn draw_welcome(frame: &mut Frame, app: &mut App) {
     let footer = format!(
         "{:^width$}",
         format!(
-            "Theme: {} │ Mode: {} │ Ctrl+P: Command Palette",
+            "Theme: {} │ Mode: {} │ Ctrl+P: Palette │ Alt+1-9: Tabs",
             theme.name,
             match &app.edit_mode {
                 crate::app::EditMode::Vim => "Vim",

@@ -113,7 +113,7 @@ pub fn draw_setup(frame: &mut Frame, app: &mut App) {
 
             for i in visible_start..visible_end {
                 let is_selected = i == app.setup_state.selected_theme;
-                let prefix = if is_selected { "  ▸ " } else { "    " };
+                let prefix = if is_selected { " ▸ " } else { "   " };
                 let label = if i < 2 {
                     format!("{} ★", theme_names[i]) // Star for Aether themes
                 } else {
@@ -121,9 +121,12 @@ pub fn draw_setup(frame: &mut Frame, app: &mut App) {
                 };
 
                 let style = if is_selected {
-                    Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(accent)
+                        .bg(preview_theme.sidebar_active_bg)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(fg)
+                    Style::default().fg(fg).bg(bg)
                 };
 
                 lines.push(Line::from(Span::styled(
@@ -131,12 +134,6 @@ pub fn draw_setup(frame: &mut Frame, app: &mut App) {
                     style,
                 )));
             }
-
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "  Press Enter to continue →",
-                Style::default().fg(accent_dim),
-            )));
         }
         2 => {
             // Step 3: Edit mode
@@ -155,25 +152,28 @@ pub fn draw_setup(frame: &mut Frame, app: &mut App) {
 
             for (i, (name, desc)) in modes.iter().enumerate() {
                 let is_selected = i == app.setup_state.selected_mode;
-                let prefix = if is_selected { "  ▸ " } else { "    " };
+                let prefix = if is_selected { " ▸ " } else { "   " };
 
-                let name_style = if is_selected {
-                    Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                let style = if is_selected {
+                    Style::default()
+                        .fg(accent)
+                        .bg(preview_theme.sidebar_active_bg)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(fg)
+                    Style::default().fg(fg).bg(bg)
                 };
 
                 let desc_style = if is_selected {
-                    Style::default().fg(accent_dim)
+                    Style::default().fg(accent_dim).bg(preview_theme.sidebar_active_bg)
                 } else {
-                    Style::default().fg(comment)
+                    Style::default().fg(comment).bg(bg)
                 };
 
                 let recommended = if i == 3 { " (recommended)" } else { "" };
 
                 lines.push(Line::from(Span::styled(
                     format!("{}{}{}", prefix, name, recommended),
-                    name_style,
+                    style,
                 )));
                 lines.push(Line::from(Span::styled(
                     format!("      {}", desc),
@@ -213,12 +213,15 @@ pub fn draw_setup(frame: &mut Frame, app: &mut App) {
 
             for (i, name) in models.iter().enumerate() {
                 let is_selected = i == app.setup_state.ai_model_choice;
-                let prefix = if is_selected { "  ▸ ◉ " } else { "    ○ " };
+                let prefix = if is_selected { " ▸ ◉ " } else { "   ○ " };
 
                 let style = if is_selected {
-                    Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(accent)
+                        .bg(preview_theme.sidebar_active_bg)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(fg)
+                    Style::default().fg(fg).bg(bg)
                 };
 
                 lines.push(Line::from(Span::styled(

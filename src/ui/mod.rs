@@ -12,6 +12,7 @@ pub mod git_diff;
 pub mod git_commit;
 pub mod ai_sidebar;
 pub mod controls;
+pub mod popup_menu;
 
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -37,6 +38,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         AppScreen::GitDiff => git_diff::draw_git_diff(frame, app),
         AppScreen::GitCommit => git_commit::draw_git_commit(frame, app),
         AppScreen::Controls => controls::draw_controls(frame, app),
+    }
+
+    if app.active_popup.is_some() {
+        popup_menu::draw_popup_menu(frame, app);
     }
 }
 
@@ -112,13 +117,18 @@ fn draw_editor(frame: &mut Frame, app: &mut App) {
     if app.show_lua_info {
         draw_lua_toolbar(frame, app, area);
     }
+
+    // Draw Go to Line overlay
+    if app.go_to_line_active {
+        draw_go_to_line(frame, app, area);
+    }
 }
 
 fn draw_editor_content(frame: &mut Frame, app: &mut App, area: Rect) {
     if app.documents.is_empty() {
         // Show a mini welcome when no docs are open but we're in editor mode
         let theme = &app.theme;
-        let msg = Paragraph::new("  No files open. Press Ctrl+N:New or Ctrl+O:Open. Backspace:Welcome.")
+        let msg = Paragraph::new("  No files open. Press Ctrl+N:New or Ctrl+O:Open. Alt+Left/Right:Tabs. Backspace:Welcome.")
             .style(Style::default().fg(theme.comment).bg(theme.bg));
         frame.render_widget(msg, area);
         return;
@@ -134,6 +144,7 @@ fn draw_hints_bar(frame: &mut Frame, app: &App, area: Rect) {
                 crate::app::VimSubMode::Normal => " i:Insert  /:Search  ::Command  Ctrl+P:Palette  Ctrl+T:Tree  Ctrl+O:Open  Ctrl+X:Close  F5:Theme".to_string(),
                 crate::app::VimSubMode::Insert => " Esc:Normal  Ctrl+S:Save  Ctrl+P:Palette  Ctrl+O:Open  Ctrl+X:Close".to_string(),
                 crate::app::VimSubMode::Command => " Enter:Execute  Esc:Cancel".to_string(),
+                crate::app::VimSubMode::Visual => " v:ExitVisual  y:Yank  d:Delete".to_string(),
             }
         }
         crate::app::EditMode::Nano => " Ctrl+S:Save  Ctrl+X:Close  Ctrl+O:Open  Ctrl+P:Palette  Ctrl+T:Tree  F5:Theme".to_string(),
@@ -142,7 +153,7 @@ fn draw_hints_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     if app.show_tab_switch_hint && !app.documents.is_empty() {
-        hints.push_str("  Ctrl+Tab:Cycle  Ctrl+1-9:Tabs");
+        hints.push_str("  Alt+1-9:Tabs  Alt+Left/Right:Nav");
     }
 
     let bar = Paragraph::new(hints)
@@ -212,4 +223,29 @@ fn draw_lua_toolbar(frame: &mut Frame, app: &App, area: Rect) {
         .add_modifier(Modifier::BOLD));
     
     frame.render_widget(bar, lua_area);
+}
+
+fn draw_go_to_line(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let width = 30.min(area.width);
+    let popup_area = Rect::new(
+        (area.width.saturating_sub(width)) / 2,
+        area.height / 3, // Position slightly higher
+        width,
+        3,
+    );
+
+    let block = Block::default()
+        .title(" 󰄚 Go to Line ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.accent))
+        .style(Style::default().bg(theme.popup_bg));
+
+    let input = Paragraph::new(format!("  {}█ ", app.go_to_line_query))
+        .block(block)
+        .style(Style::default().fg(theme.fg));
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(input, popup_area);
 }

@@ -166,6 +166,14 @@ impl Document {
             }
         }
     }
+
+    pub fn line_count(&self) -> usize {
+        self.buffer.line_count()
+    }
+
+    pub fn char_count(&self) -> usize {
+        self.buffer.to_string().chars().count()
+    }
 }
 
 fn detect_file_type(path: &str) -> String {
